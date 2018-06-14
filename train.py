@@ -54,11 +54,11 @@ y_pred.append(tf.tile(tf.reshape([-1.098, -1.098, 1, 1, 0.8, 0.2, 0.3], shape=[1
 y_pred.append(tf.placeholder(tf.float32, [None, 26, 26, 3 * (5 + C)]))
 y_pred.append(tf.placeholder(tf.float32, [None, 52, 52, 3 * (5 + C)]))
 
-# y_true.append(tf.placeholder(tf.float32, [None, 13, 13, 3, 5 + C]))
+y_true.append(tf.placeholder(tf.float32, [None, 13, 13, 3, 5 + C]))
 y_true.append(tf.placeholder(tf.float32, [None, 26, 26, 3, 5 + C]))
 y_true.append(tf.placeholder(tf.float32, [None, 52, 52, 3, 5 + C]))
 # origin_boxes = tf.placeholder(tf.float32, [None, 1, 1, 1, 8, 4])
-origin_boxes = tf.tile(tf.reshape([200.0, 200.0, 208.0, 208.0], shape=[1, 1, 1, 1, 1, 4]), [16, 1, 1, 1, 8, 1])
+# origin_boxes = tf.tile(tf.reshape([200.0, 200.0, 208.0, 208.0], shape=[1, 1, 1, 1, 1, 4]), [16, 1, 1, 1, 8, 1])
 # pred_yolo_2 = tf.placeholder(tf.float32, [None, 26, 26, 255])
 # pred_yolo_3 = tf.placeholder(tf.float32, [None, 52, 52, 255])
 
@@ -73,7 +73,7 @@ img_factor = tf.reshape(tf.cast([img_w, img_h], tf.float32), [1, 1, 1, 1, 2])
 loss = 0
 for i in range(3):
     # TODO:adjust the order of the anchor
-    anchor = anchors[..., i:3 * (i + 1), :]
+    anchor = anchors[..., 3 * i:3 * (i + 1), :]
     object_mask = tf.expand_dims(y_true[i][..., 4], 4)
 
     grid_w = tf.shape(y_pred[i])[1]  # 13
@@ -88,10 +88,12 @@ for i in range(3):
     adjusted_net_out = tf.concat([adjusted_out_xy, adjusted_out_wh, adjusted_out_c, adjusted_out_class], axis=-1)
     pred_boxes = tf.expand_dims(adjusted_net_out[..., 0:4], 4)
 
-    adjusted_origin_xy = origin_boxes[..., :2] / img_factor
-    adjusted_origin_wh = origin_boxes[..., 2:4] / img_factor
-    adjusted_origin_boxes = tf.concat([adjusted_origin_xy, adjusted_origin_wh], axis=-1)
-    iou_scores = iou(pred_boxes, adjusted_origin_boxes)
+    # adjusted_origin_xy = origin_boxes[..., :2] / img_factor
+    # adjusted_origin_wh = origin_boxes[..., 2:4] / img_factor
+    # adjusted_origin_boxes = tf.concat([adjusted_origin_xy, adjusted_origin_wh], axis=-1)
+    origin_boxes = tf.boolean_mask(y_true[i][..., :4], y_true[i][..., 4])
+    origin_boxes = tf.tile(tf.reshape(origin_boxes, shape=[1, 1, 1, 1, -1, 4]), [batch_size, 1, 1, 1, 1, 1])
+    iou_scores = iou(pred_boxes, origin_boxes)
     best_ious = tf.reduce_max(iou_scores, axis=4)
     conf_delta = adjusted_out_c
     conf_delta *= tf.expand_dims(tf.to_float(best_ious < ignore_thresh), 4)
