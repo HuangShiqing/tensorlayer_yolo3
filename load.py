@@ -10,7 +10,7 @@ from net import *
 logger = log.getLogger('tensorlayer')
 logger.setLevel(level=log.ERROR)
 
-checkpoint_dir = 'D:/DeepLearning/code/tensorlayer_yolo3/ckpt/'
+checkpoint_dir = './ckpt/'
 
 weights_path = 'yolov3.weights'
 config_path = 'yolov3.cfg'
@@ -68,9 +68,9 @@ net = conv2d_unit(net, 512, 1, name='77')
 net = conv2d_unit(net, 1024, 3, name='78')
 net = conv2d_unit(net, 512, 1, name='79')
 net = conv2d_unit(net, 1024, 3, name='80')
-pred_yolo_1 = conv2d_unit(net, 3 * (5 + n_class), 1, name='81')
+pred_yolo_1 = conv2d_unit(net, 3 * (5 + n_class), 1, name='81', bn=False)
 net = RouteLayer(net, routes=['conv79'], name='83')
-net = conv2d_unit(net, 255, 1, name='84')
+net = conv2d_unit(net, 256, 1, name='84')
 net = upsample(net, scale=2, name='85')
 net = RouteLayer(net, routes=['upsample85', 'res61'], name='86')
 
@@ -80,7 +80,7 @@ net = conv2d_unit(net, 256, 1, name='89')
 net = conv2d_unit(net, 512, 3, name='90')
 net = conv2d_unit(net, 256, 1, name='91')
 net = conv2d_unit(net, 512, 3, name='92')
-pred_yolo_2 = conv2d_unit(net, 3 * (5 + n_class), 1, name='93')
+pred_yolo_2 = conv2d_unit(net, 3 * (5 + n_class), 1, name='93', bn=False)
 net = RouteLayer(net, routes=['conv91'], name='95')
 net = conv2d_unit(net, 128, 1, name='96')
 net = upsample(net, scale=2, name='97')
@@ -92,7 +92,7 @@ net = conv2d_unit(net, 128, 1, name='101')
 net = conv2d_unit(net, 256, 3, name='102')
 net = conv2d_unit(net, 128, 1, name='103')
 net = conv2d_unit(net, 256, 3, name='104')
-pred_yolo_3 = conv2d_unit(net, 3 * (5 + n_class), 1, name='105')
+pred_yolo_3 = conv2d_unit(net, 3 * (5 + n_class), 1, name='105', bn=False)
 
 # a = tf.global_variables('bn' + '0')
 # with tf.variable_scope('conv0'):
@@ -133,23 +133,15 @@ with tf.Session() as sess:
         else:
             tensor_conv_w = tf.global_variables('conv' + str(i))[0]
             tensor_conv_b = tf.global_variables('conv' + str(i))[1]
-            tensor_bn_beta = tf.global_variables('bn' + str(i))[0]
-            tensor_bn_gamma = tf.global_variables('bn' + str(i))[1]
-            tensor_bn_mean = tf.global_variables('bn' + str(i))[2]
-            tensor_bn_variance = tf.global_variables('bn' + str(i))[3]
 
             in_ch = tensor_conv_w.get_shape().as_list()[-2]
             filter_num = tensor_conv_w.get_shape().as_list()[-1]
             kernel = tensor_conv_w.get_shape().as_list()[0]
 
             conv_bias = np.ndarray(
-                shape=filter_num,  # (32,),
+                shape=(filter_num,),  # (32,),
                 dtype='float32',
                 buffer=weights_file.read(filter_num * 4))
-            bn_weights = np.ndarray(
-                shape=(3, filter_num),  # (3, 32),
-                dtype='float32',
-                buffer=weights_file.read(filter_num * 12))
 
             weights_size = np.product([kernel, kernel, in_ch, filter_num])
             conv_weights = np.ndarray(
@@ -161,10 +153,21 @@ with tf.Session() as sess:
             tf.assign(tensor_conv_w, conv_weights).eval()
             tf.assign(tensor_conv_b, conv_bias).eval()
 
-            tf.assign(tensor_bn_beta, conv_bias).eval()
-            tf.assign(tensor_bn_gamma, bn_weights[0]).eval()
-            tf.assign(tensor_bn_mean, bn_weights[1]).eval()
-            tf.assign(tensor_bn_variance, bn_weights[2]).eval()
+            if i not in [81, 93, 105]:
+                tensor_bn_beta = tf.global_variables('bn' + str(i))[0]
+                tensor_bn_gamma = tf.global_variables('bn' + str(i))[1]
+                tensor_bn_mean = tf.global_variables('bn' + str(i))[2]
+                tensor_bn_variance = tf.global_variables('bn' + str(i))[3]
+
+                bn_weights = np.ndarray(
+                    shape=(3, filter_num),  # (3, 32),
+                    dtype='float32',
+                    buffer=weights_file.read(filter_num * 12))
+
+                tf.assign(tensor_bn_beta, conv_bias).eval()
+                tf.assign(tensor_bn_gamma, bn_weights[0]).eval()
+                tf.assign(tensor_bn_mean, bn_weights[1]).eval()
+                tf.assign(tensor_bn_variance, bn_weights[2]).eval()
 
     # tf.assign(tf.global_variables('conv0')[0], conv_weights).eval()
     # tf.assign(tf.global_variables('conv0')[1], conv_bias).eval()
