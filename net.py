@@ -3,6 +3,7 @@ import tensorlayer as tl
 import numpy as np
 
 from tensorlayer.layers import *
+from tensorflow.contrib import layers
 
 from tensorlayer.deprecation import deprecated_alias
 import tensorlayer._logging as logging
@@ -98,7 +99,8 @@ def conv2d_unit(prev_layer, filters, kernels, strides=1, name='0', bn=True):
         shape=(kernels, kernels, input_ch, filters),
         strides=(1, strides, strides, 1),
         padding='SAME',
-        name='conv' + name)
+        name='conv' + name,
+        W_init_args={'regularizer': layers.l2_regularizer(5e-4)})
     if bn is True:
         network = BatchNormLayer(network, act=tf.nn.leaky_relu, is_train=True, name='bn' + name)
 
@@ -165,7 +167,7 @@ def stack_residual_block(inputs, filters, n, name='0'):
 # net = conv2d_unit(net, 1024, 3, name='78')
 # net = conv2d_unit(net, 512, 1, name='79')
 # net = conv2d_unit(net, 1024, 3, name='80')
-# pred_yolo_1 = conv2d_unit(net, 3 * (5 + n_class), 1, name='81', bn=False)
+# pred_yolo_1 = conv2d_unit(net, 3 * (5 + n_class), 1, name='81', bn=False).outputs
 # net = RouteLayer(net, routes=['conv79'], name='83')
 # net = conv2d_unit(net, 256, 1, name='84')
 # net = upsample(net, scale=2, name='85')
@@ -177,7 +179,7 @@ def stack_residual_block(inputs, filters, n, name='0'):
 # net = conv2d_unit(net, 512, 3, name='90')
 # net = conv2d_unit(net, 256, 1, name='91')
 # net = conv2d_unit(net, 512, 3, name='92')
-# pred_yolo_2 = conv2d_unit(net, 3 * (5 + n_class), 1, name='93', bn=False)
+# pred_yolo_2 = conv2d_unit(net, 3 * (5 + n_class), 1, name='93', bn=False).outputs
 # net = RouteLayer(net, routes=['conv91'], name='95')
 # net = conv2d_unit(net, 128, 1, name='96')
 # net = upsample(net, scale=2, name='97')
@@ -189,7 +191,7 @@ def stack_residual_block(inputs, filters, n, name='0'):
 # net = conv2d_unit(net, 256, 3, name='102')
 # net = conv2d_unit(net, 128, 1, name='103')
 # net = conv2d_unit(net, 256, 3, name='104')
-# pred_yolo_3 = conv2d_unit(net, 3 * (5 + n_class), 1, name='105', bn=False)
+# pred_yolo_3 = conv2d_unit(net, 3 * (5 + n_class), 1, name='105', bn=False).outputs
 # exit()
 #
 # print("ok")
