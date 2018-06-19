@@ -69,20 +69,17 @@ if tf.train.get_checkpoint_state(checkpoint_dir):  # 确认是否存在
 else:
     print("ckpt文件不存在")
 
-a = tf.global_variables()[-1].eval()
-
-image = Image.open('dog.jpg')
-image = image.resize((416, 416), Image.BICUBIC)
-image_data = np.array(image, dtype='float32')
-image_data = image_data / 255.
-image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
-# img = cv2.imread('dog.jpg')
-# img = img[:, :, ::-1]  # RGB image
-# input_shape = tf.constant(img.shape[0:2], dtype='float', shape=(2,))
-# im_sized = cv2.resize(img, (416, 416))
-# image_data = np.array(im_sized, dtype='float32')
-# image_data /= 255.
+# image = Image.open('dog.jpg')
+# image = image.resize((416, 416), Image.BICUBIC)
+# image_data = np.array(image, dtype='float32')
+# image_data = image_data / 255.
 # image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+img = cv2.imread('dog.jpg')
+img = img[:, :, ::-1]  # RGB image
+im_sized = cv2.resize(img, (416, 416))
+image_data = np.array(im_sized, dtype='float32')
+image_data /= 255.
+image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
 
 pred = [pred_yolo_3, pred_yolo_2, pred_yolo_1]
 
@@ -135,14 +132,14 @@ for i in range(3):
 
     box_scores = adjusted_out_c * adjusted_out_class
     max_scores = tf.reduce_max(box_scores, axis=-1)
-    max_ind = tf.arg_max(box_scores, dimension=-1)
+    max_ind = tf.argmax(box_scores, axis=-1)
 
     max_scores = tf.reshape(max_scores, [-1, ])
     max_ind = tf.reshape(max_ind, [-1, ])
 
     boxes.append(box)
     scores.append(max_scores)
-    # classes.append()
+    classes.append(max_ind)
 
 [b, s] = sess.run([boxes, scores], feed_dict={input_pb: image_data})
 # im_sized = im_sized[:, :, ::-1]  # RGB image

@@ -93,16 +93,20 @@ def conv2d_unit(prev_layer, filters, kernels, strides=1, name='0', bn=True):
     input_size = prev_layer.outputs.get_shape().as_list()[1]
     input_ch = prev_layer.outputs.get_shape().as_list()[3]
 
+    if strides > 1:
+        network = ZeroPad2d(prev_layer, padding=((1, 0), (1, 0)), name='pad' + name)
+
     network = Conv2dLayer(
-        prev_layer,
-        act=tf.identity,
+        prev_layer=prev_layer if strides is 1 else network,
+        act=tf.identity if bn is True else lambda x: tl.act.lrelu(x, 0.1),  # tf.nn.leaky_relu,
         shape=(kernels, kernels, input_ch, filters),
         strides=(1, strides, strides, 1),
-        padding='SAME',
+        padding='SAME' if strides is 1 else 'VALID',
+        b_init=None if bn is True else tf.constant_initializer(value=0.0),
         name='conv' + name,
         W_init_args={'regularizer': layers.l2_regularizer(5e-4)})
     if bn is True:
-        network = BatchNormLayer(network, act=tf.nn.leaky_relu, is_train=True, name='bn' + name)
+        network = BatchNormLayer(network, act=lambda x: tl.act.lrelu(x, 0.1), is_train=True, name='bn' + name)
 
     out_size = network.outputs.get_shape().as_list()[1]
     out_ch = network.outputs.get_shape().as_list()[3]
