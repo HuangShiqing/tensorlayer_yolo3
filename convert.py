@@ -1,31 +1,27 @@
 import tensorflow as tf
 import tensorlayer as tl
-import cv2
 import numpy as np
+
 from tensorlayer.layers import *
 
+from tqdm import tqdm
 from net import Gb_all_layer_out, ResLayer, RouteLayer, upsample, conv2d_unit, detection
 
-img = cv2.imread('dog.jpg')
-img = img[:, :, ::-1]  # RGB image
-img_shape = img.shape[0:2][::-1]
-
-_scale = min(416 / img_shape[0], 416 / img_shape[1])
-_new_shape = (int(img_shape[0] * _scale), int(img_shape[1] * _scale))
-im_sized = cv2.resize(img, _new_shape)
-im_sized = np.pad(im_sized,
-                  (
-                      (int((416 - _new_shape[1]) / 2), 416 - _new_shape[1] - int((416 - _new_shape[1]) / 2)),
-                      (int((416 - _new_shape[0]) / 2), 416 - _new_shape[0] - int((416 - _new_shape[0]) / 2)),
-                      (0, 0)
-                  ),
-                  mode='constant')
-image_data = np.array(im_sized, dtype='float32')
-image_data /= 255.
-image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
-
-# net_out = [tf.zeros(shape=(1, 52, 52, 3, 85)), tf.zeros(shape=(1, 26, 26, 3, 85)), tf.zeros(shape=(1, 13, 13, 3, 85))]
 checkpoint_dir = './ckpt/'
+
+weights_path = 'yolov3.weights'
+config_path = 'yolov3.cfg'
+# Load weights and config.
+print('Loading weights.')
+weights_file = open(weights_path, 'rb')
+major, minor, revision = np.ndarray(
+    shape=(3,), dtype='int32', buffer=weights_file.read(12))
+if (major * 10 + minor) >= 2 and major < 1000 and minor < 1000:
+    seen = np.ndarray(shape=(1,), dtype='int64', buffer=weights_file.read(8))
+else:
+    seen = np.ndarray(shape=(1,), dtype='int32', buffer=weights_file.read(4))
+print('Weights Header: ', major, minor, revision, seen)
+
 n_class = 80
 input_pb = tf.placeholder(tf.float32, [None, 416, 416, 3])
 net = InputLayer(input_pb, name='input')
@@ -138,108 +134,59 @@ net = conv2d_unit(net, filters=3 * (5 + n_class), kernels=1, strides=1, act='lin
 detection(net, '106')
 net_out = [Gb_all_layer_out[106], Gb_all_layer_out[94], Gb_all_layer_out[82]]
 
-# 读取ckpt里保存的参数
-sess = tf.InteractiveSession()
 saver = tf.train.Saver()
-# 如果有checkpoint这个文件可以加下面这句话，如果只有一个ckpt文件就不需要这个if
-if tf.train.get_checkpoint_state(checkpoint_dir):  # 确认是否存在
-    saver.restore(sess, checkpoint_dir + "model.ckpt")
-    print("load ok!")
-else:
-    print("ckpt文件不存在")
+with tf.Session() as sess:
+    tf.global_variables_initializer().run()
 
-# tensor = tf.global_variables('layer_0_conv')
-# b = sess.run(tensor)
-# c = sess.run(net_out, feed_dict={input_pb: image_data})
+    for i in tqdm(range(106)):
+        if i in [4, 8, 11, 15, 18, 21, 24, 27, 30, 33, 36, 40, 43, 46, 49, 52, 55, 58, 61, 65, 68, 71, 74]:  # res
+            pass
+        elif i in [83, 86, 95, 98]:  # route
+            pass
+        elif i in [82, 94, 106]:  # detction
+            pass
+        elif i in [85, 97]:  # upsample
+            pass
+        else:  # conv
+            tensor_conv_w = tf.global_variables('layer_' + str(i) + '_conv')[0]
 
-num_classes = 80
-anchors = tf.constant([10, 13, 16, 30, 33, 23, 30, 61, 62, 45, 59, 119, 116, 90, 156, 198, 373, 326],
-                      dtype='float', shape=[1, 1, 1, 9, 2])
-input_shape = tf.cast(tf.shape(net_out[2])[1:3] * 32, dtype='float32')[::-1]  # hw
-image_shape = tf.cast(img_shape, dtype='float32')[::-1]  # hw
-new_shape = tf.round(image_shape * tf.reduce_min(input_shape / image_shape))
-offset = (input_shape - new_shape) / 2. / input_shape
-scale = input_shape / new_shape
+            in_ch = tensor_conv_w.get_shape().as_list()[-2]
+            filter_num = tensor_conv_w.get_shape().as_list()[-1]
+            kernel = tensor_conv_w.get_shape().as_list()[0]
 
-# with tf.Session() as sess:
-#     a = sess.run(scale)
+            conv_bias = np.ndarray(
+                shape=(filter_num,),  # (32,),
+                dtype='float32',
+                buffer=weights_file.read(filter_num * 4))
 
+            if i not in [81, 93, 105]:  # no bn
+                tensor_bn_beta = tf.global_variables('layer_' + str(i) + '_bn')[0]
+                tensor_bn_gamma = tf.global_variables('layer_' + str(i) + '_bn')[1]
+                tensor_bn_mean = tf.global_variables('layer_' + str(i) + '_bn')[2]
+                tensor_bn_variance = tf.global_variables('layer_' + str(i) + '_bn')[3]
 
-boxes = list()
-box_scores = list()
+                bn_weights = np.ndarray(
+                    shape=(3, filter_num),  # (3, 32),
+                    dtype='float32',
+                    buffer=weights_file.read(filter_num * 12))
 
-cellbase_x = tf.to_float(tf.reshape(tf.tile(tf.range(52), [52]), (1, 52, 52, 1, 1)))
-cellbase_y = tf.transpose(cellbase_x, (0, 2, 1, 3, 4))
-cellbase_grid = tf.tile(tf.concat([cellbase_x, cellbase_y], -1), [1, 1, 1, 3, 1])
-# classes = list()
-for i in range(3):  # 52 26 13
-    anchor = anchors[..., 3 * i:3 * (i + 1), :]
-    # feats = model.output[i]
-    feats = net_out[i]
+                tf.assign(tensor_bn_beta, conv_bias).eval()
+                tf.assign(tensor_bn_gamma, bn_weights[0]).eval()
+                tf.assign(tensor_bn_mean, bn_weights[1]).eval()
+                tf.assign(tensor_bn_variance, bn_weights[2]).eval()
+            else:  # in [81, 93, 105] only when there is no bn, the conv_b is used
+                tensor_conv_b = tf.global_variables('layer_' + str(i) + '_conv')[1]
+                tf.assign(tensor_conv_b, conv_bias).eval()
 
-    grid_w = tf.shape(feats)[1]  # 13
-    grid_h = tf.shape(feats)[2]  # 13
-    grid_factor = tf.reshape(tf.cast([grid_w, grid_h], tf.float32), [1, 1, 1, 1, 2])
+            weights_size = np.product([kernel, kernel, in_ch, filter_num])
+            conv_weights = np.ndarray(
+                shape=[filter_num, in_ch, kernel, kernel],  # [32, 3, 3, 3],
+                dtype='float32',
+                buffer=weights_file.read(weights_size * 4))
+            conv_weights = np.transpose(conv_weights, [2, 3, 1, 0])
+            tf.assign(tensor_conv_w, conv_weights).eval()
 
-    feats = tf.reshape(
-        feats, [-1, grid_w, grid_h, 3, num_classes + 5])
-
-    # Adjust preditions to each spatial grid point and anchor size.
-    box_xy = (tf.sigmoid(feats[..., :2]) + cellbase_grid[:, :grid_w, :grid_h, :, :]) / tf.cast(grid_factor[::-1],
-                                                                                               'float32')
-    box_wh = tf.exp(feats[..., 2:4]) * anchor / tf.cast(input_shape[::-1], 'float32')
-    box_confidence = tf.sigmoid(feats[..., 4:5])
-    box_class_probs = tf.sigmoid(feats[..., 5:])
-
-    box_yx = box_xy[..., ::-1]
-    box_hw = box_wh[..., ::-1]
-    box_yx = (box_yx - offset) * scale
-    box_hw *= scale
-    box_mins = box_yx - (box_hw / 2.)
-    box_maxes = box_yx + (box_hw / 2.)
-    _boxes = tf.concat([
-        box_mins[..., 0:1],  # y_min
-        box_mins[..., 1:2],  # x_min
-        box_maxes[..., 0:1],  # y_max
-        box_maxes[..., 1:2]  # x_max
-    ], axis=-1)
-
-    # Scale boxes back to original image shape.
-    _boxes *= tf.concat([tf.cast(image_shape, 'float32'), tf.cast(image_shape, 'float32')], axis=-1)
-    _boxes = tf.reshape(_boxes, [-1, 4])
-
-    _box_scores = box_confidence * box_class_probs
-    _box_scores = tf.reshape(_box_scores, [-1, num_classes])
-    boxes.append(_boxes)
-    box_scores.append(_box_scores)
-boxes = tf.concat(boxes, axis=0)
-box_scores = tf.concat(box_scores, axis=0)
-
-mask = box_scores >= 0.3
-max_num_boxes = tf.constant(20, dtype='int32')
-
-boxes_ = []
-scores_ = []
-classes_ = []
-for c in range(num_classes):
-    class_boxes = tf.boolean_mask(boxes, mask[:, c])
-    class_box_scores = tf.boolean_mask(box_scores[:, c], mask[:, c])
-    nms_index = tf.image.non_max_suppression(
-        class_boxes, class_box_scores, max_num_boxes, iou_threshold=0.5)
-    class_boxes = tf.gather(class_boxes, nms_index)
-    class_box_scores = tf.gather(class_box_scores, nms_index)
-    classes = tf.ones_like(class_box_scores, 'int32') * c
-    boxes_.append(class_boxes)
-    scores_.append(class_box_scores)
-    classes_.append(classes)
-boxes_ = tf.concat(boxes_, axis=0)
-scores_ = tf.concat(scores_, axis=0)
-classes_ = tf.concat(classes_, axis=0)
-
-b, s, c = sess.run([boxes_, scores_, classes_], feed_dict={input_pb: image_data})
-img = img[:, :, ::-1]
-for obj in b:
-    cv2.rectangle(img, (obj[1], obj[0]), (obj[3], obj[2]), (0, 255, 0), 1)
-# im_sized = im_sized[:, :, ::-1]  # RGB image
-cv2.imwrite("C:/Users/john/Desktop/1.jpg", img)
-exit()
+    weights_file.close()
+    print('writeing into ckpt...')
+    saver.save(sess, checkpoint_dir + "model.ckpt")
+    print('done')
