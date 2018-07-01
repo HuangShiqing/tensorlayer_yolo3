@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import cv2
 import numpy as np
 import copy
+import matplotlib.pyplot as plt  # dealing with plots
 
 from varible import *
 
@@ -301,7 +302,7 @@ def bbox_iou(box1, box2):
 
 
 def process_box(boxes):
-    batch_size = 16
+    batch_size = Gb_batch_size
     base_grid_h = base_grid_w = 13
     net_w = net_h = 416
     anchors = Gb_anchors
@@ -312,11 +313,11 @@ def process_box(boxes):
     # initialize the inputs and the outputs
     # TODO carefully think about the order of the y_true and anchors
     y_true.append(np.zeros((batch_size, 4 * base_grid_h, 4 * base_grid_w, 3,
-                            4 + 1 + 80)))  # desired network output 3
+                            4 + 1 + len(Gb_label))))  # desired network output 3
     y_true.append(np.zeros((batch_size, 2 * base_grid_h, 2 * base_grid_w, 3,
-                            4 + 1 + 80)))  # desired network output 2
+                            4 + 1 + len(Gb_label))))  # desired network output 2
     y_true.append(np.zeros((batch_size, 1 * base_grid_h, 1 * base_grid_w, 3,
-                            4 + 1 + 80)))  # desired network output 1
+                            4 + 1 + len(Gb_label))))  # desired network output 1
 
     for instance_index in range(batch_size):
         # allobj_sized = [{'xmin': 96, 'name': 'person', 'ymin': 96, 'xmax': 304, 'ymax': 304},
@@ -399,12 +400,18 @@ def data_generator(chunks):
             i %= n
             imgs_sized, boxes_sized = get_data(chunks[i], images_path)
             i += 1
+            # plt.imshow(imgs_sized)
             # for obj in boxes_sized:
-            #     if (obj['xmin'] == 416 and obj['xmax'] == 416) or (obj['ymin'] == 416 and obj['ymax'] == 416):
-            #         print('error')
-            #     cv2.rectangle(imgs_sized, (obj['xmin'], obj['ymin']), (obj['xmax'], obj['ymax']), (0, 255, 0), 1)
-            # imgs_sized = imgs_sized[:, :, ::-1]  # BGR image
-            # cv2.imwrite("C:/Users/john/Desktop/" + str(t) + '.jpg', imgs_sized)
+            #     x1 = obj['xmin']
+            #     x2 = obj['xmax']
+            #     y1 = obj['ymin']
+            #     y2 = obj['ymax']
+            #
+            #     plt.hlines(y1, x1, x2, colors='red')
+            #     plt.hlines(y2, x1, x2, colors='red')
+            #     plt.vlines(x1, y1, y2, colors='red')
+            #     plt.vlines(x2, y1, y2, colors='red')
+            # plt.show()
 
             if len(boxes_sized) is 0:  # in case all the box in a batch become empty becase of the augmentation
                 continue
@@ -415,10 +422,14 @@ def data_generator(chunks):
 
         image_data = np.array(image_data)
         # boxes_labeled = np.array(boxes_labeled)
-        yield image_data, *boxes_labeled
+        yield image_data, boxes_labeled
 
-# a = data_generator()
-# for x in a:
-#     print('ok')
+
+annotations_path = Gb_ann_path
+pick = Gb_label
+chunks = pascal_voc_clean_xml(annotations_path, pick)
+a = data_generator(chunks)
+for x in a:
+    print('ok')
 
 # exit()
