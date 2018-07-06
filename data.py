@@ -400,6 +400,7 @@ def data_generator(chunks):
             i %= n
             imgs_sized, boxes_sized = get_data(chunks[i], images_path)
             i += 1
+            # plt.cla()
             # plt.imshow(imgs_sized)
             # for obj in boxes_sized:
             #     x1 = obj['xmin']
@@ -425,11 +426,11 @@ def data_generator(chunks):
         yield image_data, boxes_labeled
 
 
-annotations_path = Gb_ann_path
-pick = Gb_label
-chunks = pascal_voc_clean_xml(annotations_path, pick)
-a = data_generator(chunks)
-for x in a:
-    print('ok')
+# annotations_path = Gb_ann_path
+# pick = Gb_label
+# chunks = pascal_voc_clean_xml(annotations_path, pick)
+# a = data_generator(chunks)
+# for x in a:
+#     print('ok')
 
 # exit()
