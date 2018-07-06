@@ -102,8 +102,8 @@ def yolo3_loss(y_pred, y_true):
             pred_boxes = tf.expand_dims(adjusted_net_out[..., 0:4], 4)
 
             adjusted_true_xy = y_true[i][..., :2] * grid_factor - cellbase_grid[:, :grid_w, :grid_h, :, :]
-            adjusted_true_wh = tf.log(y_true[i][..., 2:4] / anchor * img_factor)
-            # TODO:avoid log(0) = -inf
+            adjusted_true_wh = tf.log(y_true[i][..., 2:4] / anchor * img_factor + 1e-9)  # 1e-9 just avoid log(0) = -inf
+
             adjusted_true_c = y_true[i][..., 4:5]
             adjusted_true_class = y_true[i][..., 5:]
 
@@ -136,12 +136,14 @@ def yolo3_loss(y_pred, y_true):
                                                                         adjusted_true_c) * ignore_masks) / batch_size
             loss_class = tf.reduce_sum(
                 object_mask * tl.cost.binary_cross_entropy(adjusted_out_class, adjusted_true_class)) / batch_size
-            loss += loss_xy + loss_wh + loss_c + loss_class
+
             tf.summary.scalar(scope.name + '/loss', loss)
             tf.summary.scalar(scope.name + '/loss_xy', loss_xy)
             tf.summary.scalar(scope.name + '/loss_wh', loss_wh)
             tf.summary.scalar(scope.name + '/loss_c', loss_c)
             tf.summary.scalar(scope.name + '/loss_class', loss_class)
+            # loss = tf.Print(loss, [xywh_scale, loss_xy, loss_wh, loss_c, loss_class])
+            loss += loss_xy + loss_wh + loss_c + loss_class
     return loss
 
 
