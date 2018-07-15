@@ -5,8 +5,8 @@ import numpy as np
 from tensorlayer.layers import *
 from tensorflow.contrib import layers
 
-from tensorlayer.deprecation import deprecated_alias
-import tensorlayer._logging as logging
+# from tensorlayer.deprecation import deprecated_alias
+# import tensorlayer._logging as logging
 import logging as log
 
 Gb_all_layer_out = list()
@@ -57,7 +57,7 @@ def conv2d_unit(prev_layer, filters, kernels, act='leaky', strides=1, name='0', 
 
 
 class ResLayer(Layer):
-    @deprecated_alias(layer='prev_layer', end_support_version=1.9)
+    # @deprecated_alias(layer='prev_layer', end_support_version=1.9)
     def __init__(self, prev_layer=None, name='0', res=None):
         super(ResLayer, self).__init__(prev_layer=prev_layer, name='layer_' + name + '_res')
 
@@ -90,7 +90,7 @@ def detection(prev_layer, name):
 
 
 class RouteLayer(Layer):
-    @deprecated_alias(layer='prev_layer', end_support_version=1.9)
+    # @deprecated_alias(layer='prev_layer', end_support_version=1.9)
     def __init__(self, prev_layer=None, routes=None, name='0'):
         super(RouteLayer, self).__init__(prev_layer=prev_layer, name='layer_' + name + '_route')
 
