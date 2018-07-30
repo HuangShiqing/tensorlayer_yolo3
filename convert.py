@@ -8,9 +8,10 @@ from tqdm import tqdm
 from net import Gb_all_layer_out, ResLayer, RouteLayer, upsample, conv2d_unit, detection
 
 checkpoint_dir = './ckpt/'
-
+model_name = 'test.ckpt'
+n_class = 10
 weights_path = 'yolov3.weights'
-config_path = 'yolov3.cfg'
+
 # Load weights and config.
 print('Loading weights.')
 weights_file = open(weights_path, 'rb')
@@ -22,7 +23,6 @@ else:
     seen = np.ndarray(shape=(1,), dtype='int32', buffer=weights_file.read(4))
 print('Weights Header: ', major, minor, revision, seen)
 
-n_class = 80
 input_pb = tf.placeholder(tf.float32, [None, 416, 416, 3])
 net = InputLayer(input_pb, name='input')
 net = conv2d_unit(net, filters=32, kernels=3, strides=1, bn=True, name='0')
@@ -174,19 +174,30 @@ with tf.Session() as sess:
                 tf.assign(tensor_bn_gamma, bn_weights[0]).eval()
                 tf.assign(tensor_bn_mean, bn_weights[1]).eval()
                 tf.assign(tensor_bn_variance, bn_weights[2]).eval()
-            else:  # in [81, 93, 105] only when there is no bn, the conv_b is used
-                tensor_conv_b = tf.global_variables('layer_' + str(i) + '_conv')[1]
-                tf.assign(tensor_conv_b, conv_bias).eval()
 
-            weights_size = np.product([kernel, kernel, in_ch, filter_num])
-            conv_weights = np.ndarray(
-                shape=[filter_num, in_ch, kernel, kernel],  # [32, 3, 3, 3],
-                dtype='float32',
-                buffer=weights_file.read(weights_size * 4))
-            conv_weights = np.transpose(conv_weights, [2, 3, 1, 0])
-            tf.assign(tensor_conv_w, conv_weights).eval()
+                weights_size = np.product([kernel, kernel, in_ch, filter_num])
+                conv_weights = np.ndarray(
+                    shape=[filter_num, in_ch, kernel, kernel],  # [32, 3, 3, 3],
+                    dtype='float32',
+                    buffer=weights_file.read(weights_size * 4))
+                conv_weights = np.transpose(conv_weights, [2, 3, 1, 0])
+                tf.assign(tensor_conv_w, conv_weights).eval()
+            else:  # in [81, 93, 105] only when there is no bn, the conv_b is used
+                weights_size = np.product([kernel, kernel, in_ch, filter_num])
+                conv_weights = np.ndarray(
+                    shape=[filter_num, in_ch, kernel, kernel],  # [32, 3, 3, 3],
+                    dtype='float32',
+                    buffer=weights_file.read(weights_size * 4))
+                conv_weights = np.transpose(conv_weights, [2, 3, 1, 0])
+
+                if n_class is 80:  # if not coco,ignore the last layer
+                    tensor_conv_b = tf.global_variables('layer_' + str(i) + '_conv')[1]
+                    tf.assign(tensor_conv_b, conv_bias).eval()
+                    tf.assign(tensor_conv_w, conv_weights).eval()
+                else:
+                    print("ignore layer", i)
 
     weights_file.close()
     print('writeing into ckpt...')
-    saver.save(sess, checkpoint_dir + "model.ckpt")
+    saver.save(sess, checkpoint_dir + model_name)
     print('done')
