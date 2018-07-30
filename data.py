@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import copy
 import matplotlib.pyplot as plt  # dealing with plots
+from tqdm import tqdm
 
 from varible import *
 
@@ -14,11 +15,23 @@ def pascal_voc_clean_xml(ANN, pick, exclusive=False):
     print('Parsing for {} {}'.format(
         pick, 'exclusively' * int(exclusive)))
 
+    # dumps = list()
+    # cur_dir = os.getcwd()
+    # os.chdir(ANN)
+    # annotations = os.listdir('.')
+    # # annotations = glob.glob(str(annotations) + '*.xml')
+    # size = len(annotations)
+
     dumps = list()
     cur_dir = os.getcwd()
     os.chdir(ANN)
-    annotations = os.listdir('.')
-    # annotations = glob.glob(str(annotations) + '*.xml')
+    path = '/home/hsq/DeepLearning/data/car/bdd100k/daytime.txt'
+    annotations = []
+    with open(path) as fh:
+        for line in tqdm(fh):
+            temp = '/home/hsq/DeepLearning/data/car/bdd100k/labels/100k/train_xml/' + line.strip()[-21:].rstrip(
+                '.jpg') + '.xml'
+            annotations.append(temp)
     size = len(annotations)
 
     for i, file in enumerate(annotations):
@@ -182,6 +195,15 @@ def remove_outbox(boxes):
     return boxes
 
 
+def remove_smallobj(boxes):
+    temp = copy.deepcopy(boxes)
+    for i, obj in enumerate(temp):
+        if (obj['xmax'] - obj['xmin'] < 30) and (obj['ymax'] - obj['ymin'] < 30) or (
+                (obj['xmax'] - obj['xmin']) * (obj['ymax'] - obj['ymin']) < 750):
+            boxes.remove(obj)
+    return boxes
+
+
 # images_path = "D:/DeepLearning/data/VOCdevkit/VOC2012/JPEGImages/"
 # annotations_path = "D:/DeepLearning/data/VOCdevkit/VOC2012/Annotations/"
 # chunks = pascal_voc_clean_xml(annotations_path, "person")
@@ -195,7 +217,7 @@ def remove_outbox(boxes):
 
 def get_data(chunk, images_path):
     net_w = net_h = 416
-    jitter = 0.3
+    jitter = Gb_jitter
     img_abs_path = images_path + chunk[0]
     w, h, allobj_ = chunk[1]
 
@@ -218,7 +240,7 @@ def get_data(chunk, images_path):
     dh = jitter * image_h
 
     new_ar = (image_w + np.random.uniform(-dw, dw)) / (image_h + np.random.uniform(-dh, dh))
-    scale = np.random.uniform(0.25, 2)
+    scale = np.random.uniform(1, 2)
 
     if new_ar < 1:
         new_h = int(scale * net_h)
@@ -241,7 +263,8 @@ def get_data(chunk, images_path):
     boxes_sized = correct_bounding_boxes(allobj_, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, image_h)
     # remove the box which out of the 416*416 after augmentation
     boxes_sized = remove_outbox(boxes_sized)
-
+    # remove the box which ares is too small to get nan loss
+    boxes_sized = remove_smallobj(boxes_sized)
     # temp = copy.deepcopy(boxes_sized)
     # for i, obj in enumerate(temp):
     #     if (obj['xmin'] == 416 and obj['xmax'] == 416) or (obj['ymin'] == 416 and obj['ymax'] == 416):
@@ -432,5 +455,5 @@ def data_generator(chunks):
 # a = data_generator(chunks)
 # for x in a:
 #     print('ok')
-
+#
 # exit()
