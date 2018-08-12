@@ -82,6 +82,10 @@ def yolo3_loss(y_pred, y_true):
         img_factor = tf.reshape(tf.cast([img_w, img_h], tf.float32), [1, 1, 1, 1, 2])
 
         loss = 0
+        sum_loss_xy = 0
+        sum_loss_wh = 0
+        sum_loss_c = 0
+        sum_loss_class = 0
         for i in range(3):
             # TODO:adjust the order of the anchor
             anchor = anchors[..., 3 * i:3 * (i + 1), :]
@@ -127,23 +131,32 @@ def yolo3_loss(y_pred, y_true):
             xywh_scale = 2 - y_true[i][..., 2:3] * y_true[i][..., 3:4]
 
             loss_xy = tf.reduce_sum(
-                object_mask * xywh_scale * tl.cost.binary_cross_entropy(adjusted_out_xy, adjusted_true_xy)) / batch_size
+                object_mask * xywh_scale * tf.nn.sigmoid_cross_entropy_with_logits(logits=net_out_reshape[..., :2],
+                                                                                   labels=adjusted_true_xy)) / batch_size
             loss_wh = tf.reduce_sum(
-                object_mask * xywh_scale * 0.5 * tf.square(adjusted_out_wh - adjusted_true_wh)) / batch_size
+                object_mask * xywh_scale * 0.5 * tf.square(net_out_reshape[..., 2:4] - adjusted_true_wh)) / batch_size
             loss_c = tf.reduce_sum(
-                object_mask * tl.cost.binary_cross_entropy(adjusted_out_c, adjusted_true_c) + (
-                        1 - object_mask) * tl.cost.binary_cross_entropy(adjusted_out_c,
-                                                                        adjusted_true_c) * ignore_masks) / batch_size
+                object_mask * tf.nn.sigmoid_cross_entropy_with_logits(logits=net_out_reshape[..., 4:5],
+                                                                      labels=adjusted_true_c) + (
+                        1 - object_mask) * tf.nn.sigmoid_cross_entropy_with_logits(logits=net_out_reshape[..., 4:5],
+                                                                                   labels=adjusted_true_c) * ignore_masks) / batch_size
             loss_class = tf.reduce_sum(
-                object_mask * tl.cost.binary_cross_entropy(adjusted_out_class, adjusted_true_class)) / batch_size
+                object_mask * tf.nn.sigmoid_cross_entropy_with_logits(logits=net_out_reshape[..., 5:],
+                                                                      labels=adjusted_true_class)) / batch_size
 
-            tf.summary.scalar(scope.name + '/loss', loss)
-            tf.summary.scalar(scope.name + '/loss_xy', loss_xy)
-            tf.summary.scalar(scope.name + '/loss_wh', loss_wh)
-            tf.summary.scalar(scope.name + '/loss_c', loss_c)
-            tf.summary.scalar(scope.name + '/loss_class', loss_class)
-            # loss = tf.Print(loss, [xywh_scale, loss_xy, loss_wh, loss_c, loss_class])
+            sum_loss_xy += loss_xy
+            sum_loss_wh += loss_wh
+            sum_loss_c += loss_c
+            sum_loss_class += loss_class
             loss += loss_xy + loss_wh + loss_c + loss_class
+
+        tf.summary.scalar('/loss', loss)
+        tf.summary.scalar('/loss_xy', sum_loss_xy)
+        tf.summary.scalar('/loss_wh', sum_loss_wh)
+        tf.summary.scalar('/loss_c', sum_loss_c)
+        tf.summary.scalar('/loss_class', sum_loss_class)
+        # loss = tf.Print(loss, [sum_loss_xy, sum_loss_wh, sum_loss_c, sum_loss_class])
+
     return loss
 
 
@@ -178,11 +191,24 @@ def main():
     loss_op = yolo3_loss(net_out, [y_true_pb_1, y_true_pb_2, y_true_pb_3])
     train_op = training(loss_op, learning_rate)
 
-    # saver = tf.train.Saver()
-    # summary_op = tf.summary.merge_all()
+    # varis = tf.global_variables()
+    # var_to_restore = [val for val in varis if 'Adam' not in val.name and 'optimizer' not in val.name]
+    # saver = tf.train.Saver(var_to_restore)
+    saver = tf.train.Saver()
+    summary_op = tf.summary.merge_all()
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
-        # train_writer = tf.summary.FileWriter(log_dir, sess.graph)
+
+        # if tf.train.get_checkpoint_state('./ckpt3/'):  # 确认是否存在
+        #     saver.restore(sess, './ckpt3/' + "test.ckpt")
+        #     print("load ok!")
+        # else:
+        #     print("ckpt文件不存在")
+
+        # tensor = tf.global_variables('layer_0_conv')
+        # b = sess.run(tensor)
+
+        train_writer = tf.summary.FileWriter(log_dir, sess.graph)
         step = 0
         for epoch in range(n_epoch):
             # TODO shuffle chunks
@@ -194,20 +220,22 @@ def main():
 
                 loss, _ = sess.run([loss_op, train_op],
                                    feed_dict={input_pb: img, y_true_pb_1: lable_box[0], y_true_pb_2: lable_box[1],
-                                              y_true_pb_3: lable_box[2], })
+                                              y_true_pb_3: lable_box[2]})
                 step += 1
 
                 # 50倍打印频率的整数倍step，写进TensorBorder一次
-                # if step + 1 == 1 or (step + 1) % 50 == 0:
-                #     summary_str = sess.run(summary_op)
-                #     train_writer.add_summary(summary_str, step)
+                if step + 1 == 1 or (step + 1) % 1 == 0:
+                    summary_str = sess.run(summary_op, feed_dict={input_pb: img, y_true_pb_1: lable_box[0],
+                                                                  y_true_pb_2: lable_box[1],
+                                                                  y_true_pb_3: lable_box[2]})
+                    train_writer.add_summary(summary_str, step)
 
                 # 每step打印一次该step的loss
                 print("Loss %fs  : Epoch %d : Step %d  took %fs" % (loss, epoch, step, time.time() - start_time))
 
-                # if (step + 1) % save_frequency == 0:
-                #     print("Save model " + "!" * 10)
-                #     save_path = saver.save(sess, final_dir + model_name, global_step=step)
+                if (step + 1) % save_frequency == 0:
+                    print("Save model " + "!" * 10)
+                    save_path = saver.save(sess, final_dir + model_name, global_step=step)
 
 
 if __name__ == '__main__':
