@@ -210,18 +210,21 @@ def main():
 
         train_writer = tf.summary.FileWriter(log_dir, sess.graph)
         step = 0
+        min_loss = 10000000
         for epoch in range(n_epoch):
+            step_epoch = 0
             # TODO shuffle chunks
             data_yield = data_generator(chunks)
 
             # train_loss, n_batch = 0, 0
             for img, lable_box in data_yield:
+                step += 1
+                step_epoch += 1
                 start_time = time.time()
 
                 loss, _ = sess.run([loss_op, train_op],
                                    feed_dict={input_pb: img, y_true_pb_1: lable_box[0], y_true_pb_2: lable_box[1],
                                               y_true_pb_3: lable_box[2]})
-                step += 1
 
                 # 50倍打印频率的整数倍step，写进TensorBorder一次
                 if step + 1 == 1 or (step + 1) % 1 == 0:
@@ -231,11 +234,16 @@ def main():
                     train_writer.add_summary(summary_str, step)
 
                 # 每step打印一次该step的loss
-                print("Loss %fs  : Epoch %d : Step %d  took %fs" % (loss, epoch, step, time.time() - start_time))
+                print("Loss %fs  : Epoch %d  %d/%d: Step %d  took %fs" % (
+                    loss, epoch, step_epoch, n_step_epoch, step, time.time() - start_time))
 
-                if (step + 1) % save_frequency == 0:
+                if step % save_frequency == 0 and loss < min_loss:
                     print("Save model " + "!" * 10)
-                    save_path = saver.save(sess, final_dir + model_name, global_step=step)
+                    save_path = saver.save(sess,
+                                           final_dir + 'ep{0:03d}-step{1:d}-loss{2:.3f}'.format(epoch, step, loss),
+                                           global_step=step)
+                if loss < min_loss:
+                    min_loss = loss
 
 
 if __name__ == '__main__':
