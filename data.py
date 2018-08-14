@@ -15,24 +15,24 @@ def pascal_voc_clean_xml(ANN, pick, exclusive=False):
     print('Parsing for {} {}'.format(
         pick, 'exclusively' * int(exclusive)))
 
-    # dumps = list()
-    # cur_dir = os.getcwd()
-    # os.chdir(ANN)
-    # annotations = os.listdir('.')
-    # # annotations = glob.glob(str(annotations) + '*.xml')
-    # size = len(annotations)
-
     dumps = list()
     cur_dir = os.getcwd()
     os.chdir(ANN)
-    path = '/home/hsq/DeepLearning/data/car/bdd100k/daytime.txt'
-    annotations = []
-    with open(path) as fh:
-        for line in tqdm(fh):
-            temp = '/home/hsq/DeepLearning/data/car/bdd100k/labels/100k/train_xml/' + line.strip()[-21:].rstrip(
-                '.jpg') + '.xml'
-            annotations.append(temp)
+    annotations = os.listdir('.')
+    # annotations = glob.glob(str(annotations) + '*.xml')
     size = len(annotations)
+
+    # dumps = list()
+    # cur_dir = os.getcwd()
+    # os.chdir(ANN)
+    # path = '/home/hsq/DeepLearning/data/car/bdd100k/daytime.txt'
+    # annotations = []
+    # with open(path) as fh:
+    #     for line in tqdm(fh):
+    #         temp = '/home/hsq/DeepLearning/data/car/bdd100k/labels/100k/train_xml/' + line.strip()[-21:].rstrip(
+    #             '.jpg') + '.xml'
+    #         annotations.append(temp)
+    # size = len(annotations)
 
     for i, file in enumerate(annotations):
         # progress bar
@@ -48,7 +48,7 @@ def pascal_voc_clean_xml(ANN, pick, exclusive=False):
         in_file = open(file)
         tree = ET.parse(in_file)
         root = tree.getroot()
-        jpg = str(root.find('filename').text)
+        jpg = str(root.find('filename').text) + '.jpg'
         imsize = root.find('size')
         w = int(imsize.find('width').text)
         h = int(imsize.find('height').text)
@@ -117,8 +117,8 @@ def _constrain(min_v, max_v, value):
 def random_distort_image(image, hue=18, saturation=1.5, exposure=1.5):
     # determine scale factors
     dhue = np.random.uniform(-hue, hue)
-    dsat = _rand_scale(saturation);
-    dexp = _rand_scale(exposure);
+    dsat = _rand_scale(saturation)
+    dexp = _rand_scale(exposure)
 
     # convert RGB space to HSV space
     image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV).astype('float')
@@ -445,6 +445,7 @@ def data_generator(chunks):
         boxes_labeled = process_box(box_data)
 
         image_data = np.array(image_data)
+        image_data = image_data / 255.
         # boxes_labeled = np.array(boxes_labeled)
         yield image_data, boxes_labeled
 

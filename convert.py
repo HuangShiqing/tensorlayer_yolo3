@@ -7,9 +7,9 @@ from tensorlayer.layers import *
 from tqdm import tqdm
 from net import Gb_all_layer_out, ResLayer, RouteLayer, upsample, conv2d_unit, detection
 
-checkpoint_dir = './ckpt/'
-model_name = 'test.ckpt'
-n_class = 10
+checkpoint_dir = './ckpt3/'
+model_name = 'yolov3.ckpt'
+n_class = 80
 weights_path = 'yolov3.weights'
 
 # Load weights and config.

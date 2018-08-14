@@ -242,7 +242,6 @@ def main():
                     save_path = saver.save(sess,
                                            final_dir + 'ep{0:03d}-step{1:d}-loss{2:.3f}'.format(epoch, step, loss),
                                            global_step=step)
-                if loss < min_loss:
                     min_loss = loss
 
 

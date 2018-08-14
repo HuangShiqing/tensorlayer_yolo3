@@ -107,7 +107,7 @@ class YOLO_Kmeans:
 
 if __name__ == "__main__":
     cluster_number = 9
-    ann_dir = "D:/DeepLearning/data/VOCdevkit/VOC2012/Annotations/"
-    pick = ['person', 'bicycle']
+    ann_dir = "/home/hsq/DeepLearning/data/LongWoodCutPickJpg/label"
+    pick = ['knot']
     kmeans = YOLO_Kmeans(cluster_number, ann_dir, pick)
     kmeans.txt2clusters()
