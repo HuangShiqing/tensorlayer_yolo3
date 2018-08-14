@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 from tensorlayer.layers import *
 import matplotlib.pyplot as plt
-import time
+import os
+from tqdm import tqdm
 
 from net import Gb_all_layer_out, ResLayer, RouteLayer, upsample, conv2d_unit, detection
 
@@ -141,11 +142,16 @@ else:
 # tensor = tf.global_variables('layer_0_conv')
 # b = sess.run(tensor)
 # c = sess.run(net_out, feed_dict={input_pb: image_data})
-# TODO: detection all dir
-while True:
-    file_name = input('Input image filename:')
-    start_time = time.time()
-    img = cv2.imread(file_name)
+if not os.path.exists('out'):
+    os.mkdir('out')
+file_name = input('Input image filedir:')
+img_path = os.listdir(file_name)
+for path in tqdm(img_path):
+    abs_path = file_name + path
+    img = cv2.imread(abs_path)
+# while True:
+#     file_name = input('Input image filename:')
+#     img = cv2.imread(file_name)
     img = img[:, :, ::-1]  # RGB image
     img_shape = img.shape[0:2][::-1]
 
@@ -244,24 +250,34 @@ while True:
 
     b, s, c = sess.run([boxes_, scores_, classes_], feed_dict={input_pb: image_data})
 
-    plt.cla()
-    plt.imshow(img)
+    # plt.cla()
+    # plt.imshow(img)
+    # for i, obj in enumerate(b):
+    #     x1 = obj[1]
+    #     x2 = obj[3]
+    #     y1 = obj[0]
+    #     y2 = obj[2]
+    #
+    #     # TODO: change the color of text
+    #     plt.text(x1, y1 - 10, round(s[i], 2))
+    #     plt.text(x2 - 30, y1 - 10, label[c[i]])
+    #     plt.hlines(y1, x1, x2, colors='red')
+    #     plt.hlines(y2, x1, x2, colors='red')
+    #     plt.vlines(x1, y1, y2, colors='red')
+    #     plt.vlines(x2, y1, y2, colors='red')
+    # plt.show()
+    img = img[:, :, ::-1]
+    file = open("./out/" + path.rstrip('.jpg') + '.txt', 'w')
     for i, obj in enumerate(b):
-        x1 = obj[1]
-        x2 = obj[3]
-        y1 = obj[0]
-        y2 = obj[2]
+        cv2.rectangle(img, (obj[1], obj[0]), (obj[3], obj[2]), (0, 0, 255), 3)
+        cv2.putText(img, str(round(s[i], 2)), (int(obj[1]), int(obj[0]) - 10), cv2.FONT_HERSHEY_COMPLEX, 2, (0, 0, 255),
+                    3)
+        cv2.putText(img, str(label[c[i]]), (int(obj[3]) - 100, int(obj[0]) - 10), cv2.FONT_HERSHEY_COMPLEX, 2,
+                    (0, 0, 255), 3)
 
-        # TODO: change the color of text
-        plt.text(x1, y1 - 10, round(s[i], 2))
-        plt.text(x2 - 30, y1 - 10, label[c[i]])
-        plt.hlines(y1, x1, x2, colors='red')
-        plt.hlines(y2, x1, x2, colors='red')
-        plt.vlines(x1, y1, y2, colors='red')
-        plt.vlines(x2, y1, y2, colors='red')
-    print('time:{0}'.format(time.time() - start_time))
-    plt.show()
-    # img = img[:, :, ::-1]
-    # for obj in b:
-    #     cv2.rectangle(img, (obj[1], obj[0]), (obj[3], obj[2]), (0, 255, 0), 1)
+        file.write('{0} {1} '.format(label[c[i]], s[i]))
+        file.write('{0} {1} {2} {3}'.format(obj[1], obj[0], obj[3], obj[2]))
+        file.write('\n')
+    file.close()
+    cv2.imwrite("./out/" + path, img)
     # cv2.imwrite("1.jpg", img)
