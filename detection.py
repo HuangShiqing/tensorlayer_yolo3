@@ -4,14 +4,16 @@ import cv2
 import numpy as np
 from tensorlayer.layers import *
 import matplotlib.pyplot as plt
+import os
 
 from net import Gb_all_layer_out, ResLayer, RouteLayer, upsample, conv2d_unit, detection
 
 # net_out = [tf.zeros(shape=(1, 52, 52, 3, 85)), tf.zeros(shape=(1, 26, 26, 3, 85)), tf.zeros(shape=(1, 13, 13, 3, 85))]
-checkpoint_dir = './ckpt2/'
+checkpoint_dir = './ckpt/'
 ckpt_name = 'test.ckpt-8999'
 label = ['knot']
-anchors = tf.constant([10, 13, 16, 30, 33, 23, 30, 61, 62, 45, 59, 119, 116, 90, 156, 198, 373, 326],
+anchors = tf.constant(#[125, 311, 127, 192, 212, 378, 273, 178, 324, 490, 362, 865, 404, 292, 513, 505, 639, 727],
+                      [10, 13, 16, 30, 33, 23, 30, 61, 62, 45, 59, 119, 116, 90, 156, 198, 373, 326],
                       dtype='float', shape=[1, 1, 1, 9, 2])
 n_class = len(label)
 
@@ -139,7 +141,12 @@ else:
 # tensor = tf.global_variables('layer_0_conv')
 # b = sess.run(tensor)
 # c = sess.run(net_out, feed_dict={input_pb: image_data})
-# TODO: detection all dir
+# os.mkdir('out')
+# file_name = input('Input image filename:')
+# img_path = os.listdir(file_name)
+# for path in img_path:
+#     abs_path = os.path.abspath(path)
+#     img = cv2.imread(abs_path)
 while True:
     file_name = input('Input image filename:')
     img = cv2.imread(file_name)
@@ -260,4 +267,5 @@ while True:
     # img = img[:, :, ::-1]
     # for obj in b:
     #     cv2.rectangle(img, (obj[1], obj[0]), (obj[3], obj[2]), (0, 255, 0), 1)
+    # cv2.imwrite("./out/" + path, img)
     # cv2.imwrite("1.jpg", img)
