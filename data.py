@@ -415,7 +415,8 @@ def data_generator(chunks):
     # chunks = pascal_voc_clean_xml(annotations_path, pick)
     n = len(chunks)
     i = 0
-    while True:
+    count = 0
+    while count < (n / Gb_batch_size):
         image_data = []
         box_data = []
         while len(box_data) < batch_size:
@@ -448,7 +449,7 @@ def data_generator(chunks):
         image_data = image_data / 255.
         # boxes_labeled = np.array(boxes_labeled)
         yield image_data, boxes_labeled
-
+        count += 1
 
 # annotations_path = Gb_ann_path
 # pick = Gb_label
