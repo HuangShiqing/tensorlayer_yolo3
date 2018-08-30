@@ -11,9 +11,8 @@ from varible import *
 
 
 # <class 'list'>: ['2007_000027.jpg', [486, 500, [['person', 174, 101, 349, 351]]]]
-def pascal_voc_clean_xml(ANN, pick, exclusive=False):
-    print('Parsing for {} {}'.format(
-        pick, 'exclusively' * int(exclusive)))
+def read_xml(ANN, pick):
+    print('Parsing for {}'.format(pick))
 
     dumps = list()
     cur_dir = os.getcwd()
@@ -34,15 +33,7 @@ def pascal_voc_clean_xml(ANN, pick, exclusive=False):
     #         annotations.append(temp)
     # size = len(annotations)
 
-    for i, file in enumerate(annotations):
-        # progress bar
-        sys.stdout.write('\r')
-        percentage = 1. * (i + 1) / size
-        progress = int(percentage * 20)
-        bar_arg = [progress * '=', ' ' * (19 - progress), percentage * 100]
-        bar_arg += [file]
-        sys.stdout.write('[{}>{}]{:.0f}%  {}'.format(*bar_arg))
-        sys.stdout.flush()
+    for file in tqdm(enumerate(annotations)):
 
         # actual parsing
         in_file = open(file)
@@ -98,27 +89,21 @@ def pascal_voc_clean_xml(ANN, pick, exclusive=False):
     return dumps
 
 
-def _rand_scale(scale):
-    scale = np.random.uniform(1, scale)
-    return scale if (np.random.randint(2) == 0) else 1. / scale;
-
-
 def random_flip(image, flip):
-    if flip == 1: return cv2.flip(image, 1)
+    if flip == 1:
+        return cv2.flip(image, 1)
     return image
 
 
-def _constrain(min_v, max_v, value):
-    if value < min_v: return min_v
-    if value > max_v: return max_v
-    return value
-
-
 def random_distort_image(image, hue=18, saturation=1.5, exposure=1.5):
+    def rand_scale(scale):
+        scale = np.random.uniform(1, scale)
+        return scale if (np.random.randint(2) == 0) else 1. / scale
+
     # determine scale factors
     dhue = np.random.uniform(-hue, hue)
-    dsat = _rand_scale(saturation)
-    dexp = _rand_scale(exposure)
+    dsat = rand_scale(saturation)
+    dexp = rand_scale(exposure)
 
     # convert RGB space to HSV space
     image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV).astype('float')
@@ -158,6 +143,13 @@ def apply_random_scale_and_crop(image, new_w, new_h, net_w, net_h, dx, dy):
 
 
 def correct_bounding_boxes(boxes, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, image_h):
+    def _constrain(min_v, max_v, value):
+        if value < min_v:
+            return min_v
+        if value > max_v:
+            return max_v
+        return value
+
     boxes = copy.deepcopy(boxes)
 
     # randomize boxes' order
@@ -451,11 +443,14 @@ def data_generator(chunks):
         yield image_data, boxes_labeled
         count += 1
 
-# annotations_path = Gb_ann_path
-# pick = Gb_label
-# chunks = pascal_voc_clean_xml(annotations_path, pick)
-# a = data_generator(chunks)
-# for x in a:
-#     print('ok')
-#
-# exit()
+
+if __name__ == '__main__':
+
+    annotations_path = Gb_ann_path
+    pick = Gb_label
+    chunks = read_xml(annotations_path, pick)
+    a = data_generator(chunks)
+    for x in a:
+        print('ok')
+
+    exit()
