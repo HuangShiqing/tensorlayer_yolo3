@@ -178,6 +178,29 @@ def correct_bounding_boxes(boxes, new_w, new_h, net_w, net_h, dx, dy, flip, imag
     return boxes
 
 
+def adjust_wh_ratio(image_w, image_h, net_h, net_w):
+    jitter = Gb_jitter
+
+    # determine the amount of scaling and cropping
+    dw = jitter * image_w
+    dh = jitter * image_h
+
+    new_ar = (image_w + np.random.uniform(-dw, dw)) / (image_h + np.random.uniform(-dh, dh))
+    scale = np.random.uniform(1, 2)
+
+    if new_ar < 1:
+        new_h = int(scale * net_h)
+        new_w = int(net_h * new_ar)
+    else:
+        new_w = int(scale * net_w)
+        new_h = int(net_w / new_ar)
+
+    dx = int(np.random.uniform(0, net_w - new_w))
+    dy = int(np.random.uniform(0, net_h - new_h))
+
+    return new_w, new_h, dx, dy
+
+
 # TODO maybe list.pop is better than list.remove
 def remove_outbox(boxes):
     temp = copy.deepcopy(boxes)
@@ -196,20 +219,11 @@ def remove_smallobj(boxes):
     return boxes
 
 
-# images_path = "D:/DeepLearning/data/VOCdevkit/VOC2012/JPEGImages/"
-# annotations_path = "D:/DeepLearning/data/VOCdevkit/VOC2012/Annotations/"
-# chunks = pascal_voc_clean_xml(annotations_path, "person")
-
-
-# chunk = a[0]
-
-# chunk = ['2007_000027.jpg', [486, 500, [{'ymax': 351, 'name': 'person', 'xmax': 349, 'ymin': 101, 'xmin': 174}]]]
 # chunk = ['2007_000032.jpg', [500, 281, [{'name': 'person', 'ymax': 229, 'ymin': 180, 'xmin': 195, 'xmax': 213},
 #                                         {'name': 'person', 'ymax': 238, 'ymin': 189, 'xmin': 26, 'xmax': 44}]]]
-
 def get_data(chunk, images_path):
     net_w = net_h = 416
-    jitter = Gb_jitter
+
     img_abs_path = images_path + chunk[0]
     w, h, allobj_ = chunk[1]
 
@@ -224,25 +238,8 @@ def get_data(chunk, images_path):
     if image is None:
         print('Cannot find ', img_abs_path)
     image = image[:, :, ::-1]  # RGB image
-
     image_h, image_w, _ = image.shape
-
-    # determine the amount of scaling and cropping
-    dw = jitter * image_w
-    dh = jitter * image_h
-
-    new_ar = (image_w + np.random.uniform(-dw, dw)) / (image_h + np.random.uniform(-dh, dh))
-    scale = np.random.uniform(1, 2)
-
-    if new_ar < 1:
-        new_h = int(scale * net_h)
-        new_w = int(net_h * new_ar)
-    else:
-        new_w = int(scale * net_w)
-        new_h = int(net_w / new_ar)
-
-    dx = int(np.random.uniform(0, net_w - new_w))
-    dy = int(np.random.uniform(0, net_h - new_h))
+    new_w, new_h, dx, dy = adjust_wh_ratio(image_w, image_h, net_w, net_h)
 
     # apply scaling and cropping
     im_sized = apply_random_scale_and_crop(image, new_w, new_h, net_w, net_h, dx, dy)
@@ -272,61 +269,46 @@ def get_data(chunk, images_path):
     return im_sized, boxes_sized
 
 
-class BoundBox:
-    def __init__(self, xmin, ymin, xmax, ymax, c=None, classes=None):
-        self.xmin = xmin
-        self.ymin = ymin
-        self.xmax = xmax
-        self.ymax = ymax
-
-        self.c = c
-        self.classes = classes
-
-        self.label = -1
-        self.score = -1
-
-
-def _interval_overlap(interval_a, interval_b):
-    x1, x2 = interval_a
-    x3, x4 = interval_b
-
-    if x3 < x1:
-        if x4 < x1:
-            return 0
-        else:
-            return min(x2, x4) - x1
-    else:
-        if x2 < x3:
-            return 0
-        else:
-            return min(x2, x4) - x3
-
-
+# box1[xmin, ymin, xmax, ymax]
 def bbox_iou(box1, box2):
-    intersect_w = _interval_overlap([box1.xmin, box1.xmax], [box2.xmin, box2.xmax])
-    intersect_h = _interval_overlap([box1.ymin, box1.ymax], [box2.ymin, box2.ymax])
+    def _interval_overlap(interval_a, interval_b):
+        x1, x2 = interval_a
+        x3, x4 = interval_b
+
+        if x3 < x1:
+            if x4 < x1:
+                return 0
+            else:
+                return min(x2, x4) - x1
+        else:
+            if x2 < x3:
+                return 0
+            else:
+                return min(x2, x4) - x3
+
+    intersect_w = _interval_overlap([box1[0], box1[2]], [box2[0], box2[2]])
+    intersect_h = _interval_overlap([box1[1], box1[3]], [box2[1], box2[3]])
 
     intersect = intersect_w * intersect_h
 
-    w1, h1 = box1.xmax - box1.xmin, box1.ymax - box1.ymin
-    w2, h2 = box2.xmax - box2.xmin, box2.ymax - box2.ymin
+    w1, h1 = box1[2] - box1[0], box1[3] - box1[1]
+    w2, h2 = box2[2] - box2[0], box2[3] - box2[1]
 
     union = w1 * h1 + w2 * h2 - intersect
 
     return float(intersect) / union
 
 
-def process_box(boxes):
+def get_y_true(boxes):
     batch_size = Gb_batch_size
     base_grid_h = base_grid_w = 13
     net_w = net_h = 416
     anchors = Gb_anchors
-    anchors_BoundBox = [BoundBox(0, 0, anchors[2 * i], anchors[2 * i + 1]) for i in range(len(anchors) // 2)]
+    anchors_BoundBox = [[0, 0, anchors[2 * i], anchors[2 * i + 1]] for i in range(len(anchors) // 2)]
     labels = Gb_label
 
     y_true = list()
     # initialize the inputs and the outputs
-    # TODO carefully think about the order of the y_true and anchors
     y_true.append(np.zeros((batch_size, 4 * base_grid_h, 4 * base_grid_w, 3,
                             4 + 1 + len(Gb_label))))  # desired network output 3
     y_true.append(np.zeros((batch_size, 2 * base_grid_h, 2 * base_grid_w, 3,
@@ -344,11 +326,7 @@ def process_box(boxes):
             max_index = -1
             max_iou = -1
 
-            # TODO replace this
-            shifted_box = BoundBox(0,
-                                   0,
-                                   obj['xmax'] - obj['xmin'],
-                                   obj['ymax'] - obj['ymin'])
+            shifted_box = [0, 0, obj['xmax'] - obj['xmin'], obj['ymax'] - obj['ymin']]
             for i in range(len(anchors_BoundBox)):
                 anchor = anchors_BoundBox[i]
                 iou = bbox_iou(shifted_box, anchor)
@@ -400,11 +378,7 @@ def process_box(boxes):
 
 def data_generator(chunks):
     images_path = Gb_images_path
-    # annotations_path = Gb_ann_path
     batch_size = Gb_batch_size
-    # pick = Gb_label
-
-    # chunks = pascal_voc_clean_xml(annotations_path, pick)
     n = len(chunks)
     i = 0
     count = 0
@@ -435,12 +409,12 @@ def data_generator(chunks):
 
             image_data.append(imgs_sized)
             box_data.append(boxes_sized)
-        boxes_labeled = process_box(box_data)
+        y_true = get_y_true(box_data)
 
         image_data = np.array(image_data)
         image_data = image_data / 255.
         # boxes_labeled = np.array(boxes_labeled)
-        yield image_data, boxes_labeled
+        yield image_data, y_true
         count += 1
 
 
