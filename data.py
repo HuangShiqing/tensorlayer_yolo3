@@ -19,7 +19,7 @@ def read_xml(ANN, pick):
     os.chdir(ANN)
     annotations = os.listdir('.')
     # annotations = glob.glob(str(annotations) + '*.xml')
-    size = len(annotations)
+    # size = len(annotations)
 
     # dumps = list()
     # cur_dir = os.getcwd()
@@ -33,7 +33,7 @@ def read_xml(ANN, pick):
     #         annotations.append(temp)
     # size = len(annotations)
 
-    for file in tqdm(enumerate(annotations)):
+    for file in tqdm(annotations):
 
         # actual parsing
         in_file = open(file)
