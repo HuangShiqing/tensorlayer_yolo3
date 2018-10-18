@@ -2,6 +2,10 @@ import tensorflow as tf
 from tensorlayer.layers import *
 from net import Gb_all_layer_out, ResLayer, RouteLayer, upsample, conv2d_unit, detection
 
+import numpy as np
+import time
+import cv2
+
 
 def infenence(input, n_class):
     # n_class = 80
@@ -116,3 +120,19 @@ def infenence(input, n_class):
     net_out = [Gb_all_layer_out[106], Gb_all_layer_out[94], Gb_all_layer_out[82]]
 
     return net_out
+
+
+if __name__ == '__main__':
+    input_pb = tf.placeholder(tf.float32, [None, 416, 416, 3])
+    with tf.Session() as sess:
+        out = infenence(input_pb)
+
+        sess.run(tf.global_variables_initializer())
+        for i in range(10):
+            img = cv2.imread('4.jpg')
+            img = cv2.resize(img, (416, 416))
+            img = np.expand_dims(img, axis=0)
+
+            time_1 = time.time()
+            a = sess.run(out, feed_dict={input_pb: img})
+            print(time.time() - time_1)
