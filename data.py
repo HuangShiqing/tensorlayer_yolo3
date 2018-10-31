@@ -10,18 +10,37 @@ from tqdm import tqdm
 from varible import *
 
 
-# <class 'list'>: ['2007_000027.jpg', [486, 500, [['person', 174, 101, 349, 351]]]]
-def read_xml(ANN, pick):
-    print('Parsing for {}'.format(pick))
+def read_xml(xml_dir, pick):
+    """
+        读取目录下所有的xml文件，获得pick标注框的信息
 
-    dumps = list()
+        Parameters
+        ----------
+        xml_dir : str
+        pick : list
+
+        Returns
+        -------
+        chunks : list
+
+        Examples
+        --------
+        xml_dir = 'D:/DeepLearning/data/WoodBlockNewPick/labels/'
+        pick = ['die knot','live knot']
+        chunks = [['1065.jpg', [2048, 1536, [{'name': 'die knot', 'ymax': 819, 'xmin': 1026, 'xmax': 1478, 'ymin': 482},
+                                            {'name': 'die knot', 'ymax': 714, 'xmin': 796, 'xmax': 986, 'ymin': 387}]]],
+                  ['10.jpg', [2048, 1536, [{'ymax': 1074, 'name': 'die knot', 'xmax': 982, 'xmin': 478, 'ymin': 535}]]]]
+    """
+    print('Parsing for {}'.format(pick))
+    chunks = list()
     cur_dir = os.getcwd()
-    os.chdir(ANN)
+    os.chdir(xml_dir)
     annotations = os.listdir('.')
+    not_in_pick = dict()
     # annotations = glob.glob(str(annotations) + '*.xml')
     # size = len(annotations)
 
-    # dumps = list()
+    # chunks = list()
     # cur_dir = os.getcwd()
     # os.chdir(ANN)
     # path = '/home/hsq/DeepLearning/data/car/bdd100k/daytime.txt'
@@ -34,7 +53,6 @@ def read_xml(ANN, pick):
     # size = len(annotations)
 
     for file in tqdm(annotations):
-
         # actual parsing
         in_file = open(file)
         tree = ET.parse(in_file)
@@ -50,6 +68,10 @@ def read_xml(ANN, pick):
             current = dict()
             name = obj.find('name').text
             if name not in pick:
+                if name not in not_in_pick:
+                    not_in_pick[name] = 1
+                else:
+                    not_in_pick[name] += 1
                 continue
 
             xmlbox = obj.find('bndbox')
@@ -67,13 +89,13 @@ def read_xml(ANN, pick):
 
         add = [[jpg, [w, h, all]]]
         if len(all) is not 0:  # skip the image which not include any 'pick'
-            dumps += add
+            chunks += add
         in_file.close()
 
     # gather all stats
     stat = dict()
-    for dump in dumps:
-        all = dump[1][2]
+    for chunk in chunks:
+        all = chunk[1][2]
         for current in all:
             if current['name'] in pick:
                 if current['name'] in stat:
@@ -81,12 +103,14 @@ def read_xml(ANN, pick):
                 else:
                     stat[current['name']] = 1
 
-    print('\nStatistics:')
-    for i in stat: print('{}: {}'.format(i, stat[i]))
-    print('Dataset size: {}'.format(len(dumps)))
+    print('\nPick:')
+    for i in stat: print('    {}: {}'.format(i, stat[i]))
+    print('Not in pick:')
+    for j in not_in_pick: print('    {}: {}'.format(j, not_in_pick[j]))
+    print('Boxes size: {}'.format(len(chunks)))
 
     os.chdir(cur_dir)
-    return dumps
+    return chunks
 
 
 def random_flip(image, flip):
@@ -96,53 +120,133 @@ def random_flip(image, flip):
 
 
 def random_distort_image(image, hue=18, saturation=1.5, exposure=1.5):
-    def rand_scale(scale):
+    def _rand_scale(scale):
         scale = np.random.uniform(1, scale)
         return scale if (np.random.randint(2) == 0) else 1. / scale
 
     # determine scale factors
     dhue = np.random.uniform(-hue, hue)
-    dsat = rand_scale(saturation)
-    dexp = rand_scale(exposure)
-
+    dsat = _rand_scale(saturation)
+    dexp = _rand_scale(exposure)
     # convert RGB space to HSV space
     image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV).astype('float')
-
     # change satuation and exposure
     image[:, :, 1] *= dsat
     image[:, :, 2] *= dexp
-
     # change hue
     image[:, :, 0] += dhue
     image[:, :, 0] -= (image[:, :, 0] > 180) * 180
     image[:, :, 0] += (image[:, :, 0] < 0) * 180
-
+    # avoid overflow when astype('uint8')
+    image[...] = np.clip(image[...], 0, 255)
     # convert back to RGB from HSV
     return cv2.cvtColor(image.astype('uint8'), cv2.COLOR_HSV2RGB)
 
 
-def apply_random_scale_and_crop(image, new_w, new_h, net_w, net_h, dx, dy):
-    im_sized = cv2.resize(image, (new_w, new_h))
+def adjust_wh_ratio(image_h, image_w, net_h, net_w):
+    """
+            小幅随机改变图像长宽比，改变幅度取决于Gb_jitter
+
+            Parameters
+            ----------
+            image_h : int 原图的h
+            image_w : int 原图的w
+            net_h : int  输入网络的图像的h，常用的是416
+            net_w : int 输入网络的图像的，常用的是416
+
+            Returns
+            -------
+            new_h : int 缩放后的h
+            new_w : int 缩放后的w
+            dx : int
+            dy : int
+
+            Examples
+            --------
+            image_h = 2048
+            image_w = 1536
+            net_h = 416
+            net_w = 416
+
+            new_h = 451
+            new_w = 276
+            dx = 19
+            dy = -23
+
+        """
+    jitter = Gb_jitter
+
+    # determine the amount of scaling and cropping
+    dw = jitter * image_w
+    dh = jitter * image_h
+
+    new_ar = (image_w + np.random.uniform(-dw, dw)) / (image_h + np.random.uniform(-dh, dh))
+    scale = np.random.uniform(1, 2)
+
+    if new_ar < 1:
+        new_h = int(scale * net_h)
+        new_w = int(net_h * new_ar)
+    else:
+        new_w = int(scale * net_w)
+        new_h = int(net_w / new_ar)
+
+    dx = int(np.random.uniform(0, net_w - new_w))
+    dy = int(np.random.uniform(0, net_h - new_h))
+
+    return new_w, new_h, dx, dy
+
+
+def random_scale_and_crop(image, new_h, new_w, net_h, net_w, dx, dy):
+    """
+             把图像先缩放到new_w和new_h大小，然后把图像的一边补上dx个像素，最后在另一边补像素直到net大小。dy同理
+
+             Parameters
+             ----------
+             image : ndarray 原图
+             new_h : int 缩放后的h
+             new_w : int 缩放后的w
+             net_h : int  输入网络的图像的h，常用的是416
+             net_w : int 输入网络的图像的，常用的是416
+             dx : int
+             dy : int
+
+             Returns
+             -------
+             img_adjusted[:net_h, :net_w, :] :
+
+             Examples
+             --------
+             new_h = 451
+             new_w = 276
+             dx = 19
+             dy = -23
+
+            img_adjusted =
+         """
+    img_adjusted = cv2.resize(image, (new_w, new_h))
 
     if dx > 0:
-        im_sized = np.pad(im_sized, ((0, 0), (dx, 0), (0, 0)), mode='constant', constant_values=127)
+        img_adjusted = np.pad(img_adjusted, ((0, 0), (dx, 0), (0, 0)), mode='constant', constant_values=127)
     else:
-        im_sized = im_sized[:, -dx:, :]
+        img_adjusted = img_adjusted[:, -dx:, :]
     if (new_w + dx) < net_w:
-        im_sized = np.pad(im_sized, ((0, 0), (0, net_w - (new_w + dx)), (0, 0)), mode='constant', constant_values=127)
+        img_adjusted = np.pad(img_adjusted, ((0, 0), (0, net_w - (new_w + dx)), (0, 0)), mode='constant',
+                              constant_values=127)
 
     if dy > 0:
-        im_sized = np.pad(im_sized, ((dy, 0), (0, 0), (0, 0)), mode='constant', constant_values=127)
+        img_adjusted = np.pad(img_adjusted, ((dy, 0), (0, 0), (0, 0)), mode='constant', constant_values=127)
     else:
-        im_sized = im_sized[-dy:, :, :]
+        img_adjusted = img_adjusted[-dy:, :, :]
 
     if (new_h + dy) < net_h:
-        im_sized = np.pad(im_sized, ((0, net_h - (new_h + dy)), (0, 0), (0, 0)), mode='constant', constant_values=127)
+        img_adjusted = np.pad(img_adjusted, ((0, net_h - (new_h + dy)), (0, 0), (0, 0)), mode='constant',
+                              constant_values=127)
+    plt.imshow(img_adjusted)
+    plt.show()
+    return img_adjusted[:net_h, :net_w, :]
 
-    return im_sized[:net_h, :net_w, :]
 
-
-def correct_bounding_boxes(boxes, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, image_h):
+def correct_boxes(boxes, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, image_h):
     def _constrain(min_v, max_v, value):
         if value < min_v:
             return min_v
@@ -178,29 +282,6 @@ def correct_bounding_boxes(boxes, new_w, new_h, net_w, net_h, dx, dy, flip, imag
     return boxes
 
 
-def adjust_wh_ratio(image_w, image_h, net_h, net_w):
-    jitter = Gb_jitter
-
-    # determine the amount of scaling and cropping
-    dw = jitter * image_w
-    dh = jitter * image_h
-
-    new_ar = (image_w + np.random.uniform(-dw, dw)) / (image_h + np.random.uniform(-dh, dh))
-    scale = np.random.uniform(1, 2)
-
-    if new_ar < 1:
-        new_h = int(scale * net_h)
-        new_w = int(net_h * new_ar)
-    else:
-        new_w = int(scale * net_w)
-        new_h = int(net_w / new_ar)
-
-    dx = int(np.random.uniform(0, net_w - new_w))
-    dy = int(np.random.uniform(0, net_h - new_h))
-
-    return new_w, new_h, dx, dy
-
-
 # TODO maybe list.pop is better than list.remove
 def remove_outbox(boxes):
     temp = copy.deepcopy(boxes)
@@ -219,54 +300,56 @@ def remove_smallobj(boxes):
     return boxes
 
 
-# chunk = ['2007_000032.jpg', [500, 281, [{'name': 'person', 'ymax': 229, 'ymin': 180, 'xmin': 195, 'xmax': 213},
-#                                         {'name': 'person', 'ymax': 238, 'ymin': 189, 'xmin': 26, 'xmax': 44}]]]
-def get_data(chunk, images_path):
-    net_w = net_h = 416
+def get_data(chunk, images_dir):
+    """
+            获得一张经过augement后的图像数据和经过同样操作的这张图片中所有box数据
 
-    img_abs_path = images_path + chunk[0]
+            Parameters
+            ----------
+            chunk : list
+            images_dir : str 训练图片所在文件夹
+
+            Returns
+            -------
+            img_adjusted : ndarray [416,416,3] 0到255
+            boxes_adjusted : list
+
+            Examples
+            --------
+            chunk = ['1065.jpg', [2048, 1536, [{'name': 'die knot', 'ymax': 819, 'xmin': 1026, 'xmax': 1478, 'ymin': 482},
+                                               {'name': 'die knot', 'ymax': 714, 'xmin': 796, 'xmax': 986, 'ymin': 387}]]]
+            img_adjusted =
+            boxes_adjusted = [{'xmax': 253, 'ymin': 159, 'ymax': 238, 'name': 'die knot', 'xmin': 101},
+                           {'xmax': 87, 'ymin': 137, 'ymax': 214, 'name': 'die knot', 'xmin': 23}]
+            """
+    net_w = net_h = 416
+    img_abs_path = images_dir + chunk[0]
     w, h, allobj_ = chunk[1]
 
     if allobj_ is None:
         return None, None
     image = cv2.imread(img_abs_path)  # RGB image
 
-    # for obj in allobj_:
-    #     cv2.rectangle(image, (obj['xmin'], obj['ymin']), (obj['xmax'], obj['ymax']),(0,255,0), 1)
-    # cv2.imwrite("C:/Users/john/Desktop/0.jpg", image)
-
     if image is None:
         print('Cannot find ', img_abs_path)
     image = image[:, :, ::-1]  # RGB image
     image_h, image_w, _ = image.shape
-    new_w, new_h, dx, dy = adjust_wh_ratio(image_w, image_h, net_w, net_h)
 
     # apply scaling and cropping
-    im_sized = apply_random_scale_and_crop(image, new_w, new_h, net_w, net_h, dx, dy)
+    new_w, new_h, dx, dy = adjust_wh_ratio(image_w, image_h, net_w, net_h)
+    img_adjusted = random_scale_and_crop(image, new_w, new_h, net_w, net_h, dx, dy)
     # randomly distort hsv space
-    # im_sized = random_distort_image(im_sized)
+    img_adjusted = random_distort_image(img_adjusted)
     # randomly flip
     flip = np.random.randint(2)
-    im_sized = random_flip(im_sized, flip)
+    img_adjusted = random_flip(img_adjusted, flip)
     # correct the size and pos of bounding boxes
-    boxes_sized = correct_bounding_boxes(allobj_, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, image_h)
+    boxes_adjusted = correct_boxes(allobj_, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, image_h)
     # remove the box which out of the 416*416 after augmentation
-    boxes_sized = remove_outbox(boxes_sized)
+    boxes_adjusted = remove_outbox(boxes_adjusted)
     # remove the box which ares is too small to get nan loss
-    boxes_sized = remove_smallobj(boxes_sized)
-    # temp = copy.deepcopy(boxes_sized)
-    # for i, obj in enumerate(temp):
-    #     if (obj['xmin'] == 416 and obj['xmax'] == 416) or (obj['ymin'] == 416 and obj['ymax'] == 416):
-    #         boxes_sized.pop(i)
-    #     cv2.rectangle(im_sized, (obj['xmin'], obj['ymin']), (obj['xmax'], obj['ymax']), (0, 255, 0), 1)
-    # im_sized = im_sized[:, :, ::-1]  # BGR image
-    # cv2.imwrite("C:/Users/john/Desktop/1.jpg", im_sized)
-
-    # for obj in boxes_sized:
-    #     cv2.rectangle(im_sized, (obj['xmin'], obj['ymin']), (obj['xmax'], obj['ymax']), (0, 255, 0), 1)
-    # im_sized = im_sized[:, :, ::-1]  # BGR image
-    # cv2.imwrite("C:/Users/john/Desktop/1.jpg", im_sized)
-    return im_sized, boxes_sized
+    boxes_adjusted = remove_smallobj(boxes_adjusted)
+    return img_adjusted, boxes_adjusted
 
 
 # box1[xmin, ymin, xmax, ymax]
@@ -369,52 +452,69 @@ def get_y_true(boxes):
     return y_true
 
 
-""""
-# Output shape
-        image_data     [Gb_batch_size, 416, 416, 3]
-        boxes_labeled  [[Gb_batch_size,52,52,3,85],[Gb_batch_size, 26,26,3,85],[Gb_batch_size,13,13,3,85]]
-"""
+def data_generator(chunks, is_show=False):
+    """
+            根据epoch大小不断产生训练所需要的x_true，y_true
 
+            Parameters
+            ----------
+            chunks : list
+            is_show : bool 如果为True，可以显示训练前的图片
 
-def data_generator(chunks):
+            Returns
+            -------
+            yield
+                x_true : ndarray [batch_size,416,416,3]
+                y_true : list [[batch_size,52,52,3,5 + n_class],
+                               [batch_size,26,26,3,5 + n_class],
+                               [batch_size,13,13,3,5 + n_class]]
+
+            Examples
+            --------
+            chunks = [['1065.jpg', [2048, 1536, [{'name': 'die knot', 'ymax': 819, 'xmin': 1026, 'xmax': 1478, 'ymin': 482},
+                                                {'name': 'die knot', 'ymax': 714, 'xmin': 796, 'xmax': 986, 'ymin': 387}]]],
+                      ['10.jpg', [2048, 1536, [{'ymax': 1074, 'name': 'die knot', 'xmax': 982, 'xmin': 478, 'ymin': 535}]]]]
+            x_true =
+            y_true =
+        """
     images_path = Gb_images_path
     batch_size = Gb_batch_size
     n = len(chunks)
     i = 0
     count = 0
     while count < (n / Gb_batch_size):
-        image_data = []
+        x_true = []
         box_data = []
         while len(box_data) < batch_size:
-            # for t in range(batch_size):
             i %= n
             imgs_sized, boxes_sized = get_data(chunks[i], images_path)
             i += 1
-            # plt.cla()
-            # plt.imshow(imgs_sized)
-            # for obj in boxes_sized:
-            #     x1 = obj['xmin']
-            #     x2 = obj['xmax']
-            #     y1 = obj['ymin']
-            #     y2 = obj['ymax']
-            #
-            #     plt.hlines(y1, x1, x2, colors='red')
-            #     plt.hlines(y2, x1, x2, colors='red')
-            #     plt.vlines(x1, y1, y2, colors='red')
-            #     plt.vlines(x2, y1, y2, colors='red')
-            # plt.show()
+            if is_show == True:
+                plt.cla()
+                plt.imshow(imgs_sized)
+                for obj in boxes_sized:
+                    x1 = obj['xmin']
+                    x2 = obj['xmax']
+                    y1 = obj['ymin']
+                    y2 = obj['ymax']
+
+                    plt.hlines(y1, x1, x2, colors='red')
+                    plt.hlines(y2, x1, x2, colors='red')
+                    plt.vlines(x1, y1, y2, colors='red')
+                    plt.vlines(x2, y1, y2, colors='red')
+                plt.show()
 
             if len(boxes_sized) is 0:  # in case all the box in a batch become empty becase of the augmentation
                 continue
 
-            image_data.append(imgs_sized)
+            x_true.append(imgs_sized)
             box_data.append(boxes_sized)
         y_true = get_y_true(box_data)
 
-        image_data = np.array(image_data)
-        image_data = image_data / 255.
-        # boxes_labeled = np.array(boxes_labeled)
-        yield image_data, y_true
+        x_true = np.array(x_true)
+        x_true = x_true / 255.
+
+        yield x_true, y_true
         count += 1
 
 
@@ -423,8 +523,8 @@ if __name__ == '__main__':
     annotations_path = Gb_ann_path
     pick = Gb_label
     chunks = read_xml(annotations_path, pick)
-    a = data_generator(chunks)
-    for x in a:
+    generator = data_generator(chunks)
+    for x_true, y_true in generator:
         print('ok')
 
     exit()
