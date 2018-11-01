@@ -114,12 +114,47 @@ def read_xml(xml_dir, pick):
 
 
 def random_flip(image, flip):
+    """
+                    随机左右翻转图片
+
+                    Parameters
+                    ----------
+                    image : 改变前的原图 RGB模式 ndarray [h,w,3] dtype=uint8
+                    flip : int 0或者1
+
+                    Returns
+                    -------
+                    image : 改变后的图 RGB模式 ndarray [h,w,3] dtype=uint8
+
+                    Examples
+                    --------
+
+                """
     if flip == 1:
         return cv2.flip(image, 1)
     return image
 
 
 def random_distort_image(image, hue=18, saturation=1.5, exposure=1.5):
+    """
+                随机改变图像色调、饱和度、明亮度
+
+                Parameters
+                ----------
+                image : 改变前的原图 RGB模式 ndarray [h,w,3] dtype=uint8
+                hue : float
+                saturation : float
+                exposure : float
+
+                Returns
+                -------
+                改变后的图 RGB模式 ndarray [h,w,3] dtype=uint8
+
+                Examples
+                --------
+
+            """
+
     def _rand_scale(scale):
         scale = np.random.uniform(1, scale)
         return scale if (np.random.randint(2) == 0) else 1. / scale
@@ -237,16 +272,41 @@ def random_scale_and_crop(image, new_h, new_w, net_h, net_w, dx, dy):
         img_adjusted = np.pad(img_adjusted, ((dy, 0), (0, 0), (0, 0)), mode='constant', constant_values=127)
     else:
         img_adjusted = img_adjusted[-dy:, :, :]
-
     if (new_h + dy) < net_h:
         img_adjusted = np.pad(img_adjusted, ((0, net_h - (new_h + dy)), (0, 0), (0, 0)), mode='constant',
                               constant_values=127)
-    plt.imshow(img_adjusted)
-    plt.show()
     return img_adjusted[:net_h, :net_w, :]
 
 
 def correct_boxes(boxes, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, image_h):
+    """
+                 图像随机缩放、裁剪、翻转后，对应的box也要同样操作
+
+                 Parameters
+                 ----------
+                 boxes : list
+                 new_w : int 缩放后的h
+                 new_h : int 缩放后的w
+                 net_w : int  输入网络的图像的h，常用的是416
+                 net_h : int 输入网络的图像的，常用的是416
+                 dx : int
+                 dy : int
+                 flip : int 0或者1
+                 image_w : 图像最原始的w
+                 image_h : 图像最原始的h
+
+                 Returns
+                 -------
+                 boxes :
+
+                 Examples
+                 --------
+                 input boxes = [{'xmin': 696, 'ymin': 411, 'name': 'die knot', 'xmax': 1231, 'ymax': 565},
+                                {'xmin': 696, 'ymin': 411, 'name': 'die knot', 'xmax': 1231, 'ymax': 565}]
+                 output boxes = [{'ymax': 169, 'xmax': 263, 'ymin': 122, 'name': 'die knot', 'xmin': 194},
+                                 {'ymax': 169, 'xmax': 263, 'ymin': 122, 'name': 'die knot', 'xmin': 194}]
+            """
+
     def _constrain(min_v, max_v, value):
         if value < min_v:
             return min_v
@@ -255,13 +315,7 @@ def correct_boxes(boxes, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, imag
         return value
 
     boxes = copy.deepcopy(boxes)
-
-    # randomize boxes' order
-    # np.random.shuffle(boxes)
-
-    # correct sizes and positions
     sx, sy = float(new_w) / image_w, float(new_h) / image_h
-    zero_boxes = []
 
     for i in range(len(boxes)):
         boxes[i]['xmin'] = int(_constrain(0, net_w, boxes[i]['xmin'] * sx + dx))
@@ -269,16 +323,11 @@ def correct_boxes(boxes, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, imag
         boxes[i]['ymin'] = int(_constrain(0, net_h, boxes[i]['ymin'] * sy + dy))
         boxes[i]['ymax'] = int(_constrain(0, net_h, boxes[i]['ymax'] * sy + dy))
 
-        # if boxes[i]['xmax'] <= boxes[i]['xmin'] or boxes[i]['ymax'] <= boxes[i]['ymin']:
-        #     zero_boxes += [i]
-        #     continue
-
         if flip == 1:
             swap = boxes[i]['xmin']
             boxes[i]['xmin'] = net_w - boxes[i]['xmax']
             boxes[i]['xmax'] = net_w - swap
 
-    # boxes = [boxes[i] for i in range(len(boxes)) if i not in zero_boxes]
     return boxes
 
 
@@ -352,12 +401,29 @@ def get_data(chunk, images_dir):
     return img_adjusted, boxes_adjusted
 
 
-# box1[xmin, ymin, xmax, ymax]
 def bbox_iou(box1, box2):
+    """
+                计算两个box的iou，这里的2个box都是要以坐标左上角（0，0）点为起点，即box的xmin和ymin都要时0
+
+                Parameters
+                ----------
+                box1 : list [xmin,ymin,xmax.ymax]
+                box2 : list [xmin,ymin,xmax.ymax]
+
+                Returns
+                -------
+                return = float
+
+                Examples
+                --------
+                box1 = [0,0,89,76]
+                box2 = [0,0,125,311]
+                return = 0.002
+                """
+
     def _interval_overlap(interval_a, interval_b):
         x1, x2 = interval_a
         x3, x4 = interval_b
-
         if x3 < x1:
             if x4 < x1:
                 return 0
@@ -383,6 +449,22 @@ def bbox_iou(box1, box2):
 
 
 def get_y_true(boxes):
+    """
+                将整个batch的boxes信息转换成最后的y_true形式
+
+                Parameters
+                ----------
+                boxes : list [xmin,ymin,xmax.ymax]
+
+                Returns
+                -------
+                y_true = float
+
+                Examples
+                --------
+                boxes = [0,0,89,76]
+                y_true = [0,0,125,311]
+                """
     batch_size = Gb_batch_size
     base_grid_h = base_grid_w = 13
     net_w = net_h = 416
@@ -398,57 +480,40 @@ def get_y_true(boxes):
                             4 + 1 + len(Gb_label))))  # desired network output 2
     y_true.append(np.zeros((batch_size, 1 * base_grid_h, 1 * base_grid_w, 3,
                             4 + 1 + len(Gb_label))))  # desired network output 1
-
     for instance_index in range(batch_size):
-        # allobj_sized = [{'xmin': 96, 'name': 'person', 'ymin': 96, 'xmax': 304, 'ymax': 304},
-        #                 {'xmin': 329, 'name': 'person', 'ymin': 272, 'xmax': 337, 'ymax': 337}]
         allobj_sized = boxes[instance_index]
         for obj in allobj_sized:
             # find the best anchor box for this object
-            max_anchor = None
             max_index = -1
             max_iou = -1
-
             shifted_box = [0, 0, obj['xmax'] - obj['xmin'], obj['ymax'] - obj['ymin']]
             for i in range(len(anchors_BoundBox)):
                 anchor = anchors_BoundBox[i]
                 iou = bbox_iou(shifted_box, anchor)
-
                 if max_iou < iou:
-                    max_anchor = anchor
                     max_index = i
                     max_iou = iou
-
-                    # determine the yolo to be responsible for this bounding box
+            # determine the yolo to be responsible for this bounding box
             grid_h, grid_w = y_true[max_index // 3].shape[1:3]
-
             # determine the position of the bounding box on the grid
             center_x = .5 * (obj['xmin'] + obj['xmax'])
             center_x = center_x / float(net_w)  # * grid_w  # sigma(t_x) + c_x
             center_y = .5 * (obj['ymin'] + obj['ymax'])
             center_y = center_y / float(net_h)  # * grid_h  # sigma(t_y) + c_y
-
             # determine the sizes of the bounding box
-            # w = np.log((obj['xmax'] - obj['xmin']) / float(max_anchor.xmax))  # t_w
-            # h = np.log((obj['ymax'] - obj['ymin']) / float(max_anchor.ymax))  # t_h
             w = (obj['xmax'] - obj['xmin']) / float(net_w)  # t_w
             h = (obj['ymax'] - obj['ymin']) / float(net_h)  # t_h
-
             box = [center_x, center_y, w, h]
-
             # determine the index of the label
             obj_indx = labels.index(obj['name'])
-
             # determine the location of the cell responsible for this object
             grid_x = int(np.floor(center_x * grid_w))
             grid_y = int(np.floor(center_y * grid_h))
-
             # assign ground truth x, y, w, h, confidence and class probs to y_batch
             y_true[max_index // 3][instance_index, grid_y, grid_x, max_index % 3] = 0
             y_true[max_index // 3][instance_index, grid_y, grid_x, max_index % 3, 0:4] = box
             y_true[max_index // 3][instance_index, grid_y, grid_x, max_index % 3, 4] = 1.
             y_true[max_index // 3][instance_index, grid_y, grid_x, max_index % 3, 5 + obj_indx] = 1
-
     return y_true
 
 
