@@ -57,7 +57,7 @@ def read_xml(xml_dir, pick):
         in_file = open(file)
         tree = ET.parse(in_file)
         root = tree.getroot()
-        jpg = str(root.find('filename').text) + '.jpg'
+        jpg = str(root.find('filename').text) + '.bmp'
         imsize = root.find('size')
         w = int(imsize.find('width').text)
         h = int(imsize.find('height').text)
@@ -385,8 +385,8 @@ def get_data(chunk, images_dir):
     image_h, image_w, _ = image.shape
 
     # apply scaling and cropping
-    new_w, new_h, dx, dy = adjust_wh_ratio(image_w, image_h, net_w, net_h)
-    img_adjusted = random_scale_and_crop(image, new_w, new_h, net_w, net_h, dx, dy)
+    new_w, new_h, dx, dy = adjust_wh_ratio(image_h, image_w, net_h, net_w)
+    img_adjusted = random_scale_and_crop(image, new_h, new_w, net_h, net_w, dx, dy)
     # randomly distort hsv space
     img_adjusted = random_distort_image(img_adjusted)
     # randomly flip
@@ -395,9 +395,9 @@ def get_data(chunk, images_dir):
     # correct the size and pos of bounding boxes
     boxes_adjusted = correct_boxes(allobj_, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, image_h)
     # remove the box which out of the 416*416 after augmentation
-    boxes_adjusted = remove_outbox(boxes_adjusted)
+    # boxes_adjusted = remove_outbox(boxes_adjusted)
     # remove the box which ares is too small to get nan loss
-    boxes_adjusted = remove_smallobj(boxes_adjusted)
+    # boxes_adjusted = remove_smallobj(boxes_adjusted)
     return img_adjusted, boxes_adjusted
 
 
@@ -454,16 +454,21 @@ def get_y_true(boxes):
 
                 Parameters
                 ----------
-                boxes : list [xmin,ymin,xmax.ymax]
+                boxes : list
 
                 Returns
                 -------
-                y_true = float
+                y_true = list [ndarray.shape[batch_size,52,52,3,6],
+                               ndarray.shape[batch_size,26,26,3,6],
+                               ndarray.shape[batch_size,13,13,3,6]]
 
                 Examples
                 --------
-                boxes = [0,0,89,76]
-                y_true = [0,0,125,311]
+                boxes = [[{'xmin': 96, 'ymax': 285, 'ymin': 137, 'xmax': 231, 'name': 'box'}],
+                        [{'xmin': 0, 'ymax': 315, 'ymin': 171, 'xmax': 152, 'name': 'box'}],
+                        ...省略了14个，总共16个
+                        ]
+                y_true =
                 """
     batch_size = Gb_batch_size
     base_grid_h = base_grid_w = 13
