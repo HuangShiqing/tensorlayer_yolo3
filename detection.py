@@ -11,26 +11,40 @@ from model import inference
 from varible import *
 
 
-def resize_img(img_path='4.jpg'):
+def resize_img(files_paths):
     net_w, net_h = 416, 416
-    img = cv2.imread(img_path)
-    img = img[:, :, ::-1]  # RGB image
-    img_h, img_w = img.shape[0:2]
+    img_h_list = list()
+    img_w_list = list()
+    img_original_list = list()
+    img_data_list = list()
+    offset_list = list()
+    scale_list = list()
+    for i in range(len(files_paths)):
+        img = cv2.imread(files_paths[i])
+        img = img[:, :, ::-1]  # RGB image
+        img_h, img_w = img.shape[0:2]
 
-    scale = min(net_h / img_h, net_w / img_w)
-    new_h, new_w = int(img_h * scale), int(img_w * scale)
-    offset = ((net_h - new_h) / 2. / net_h, (net_w - new_w) / 2. / net_w)
-    scale = (net_h / new_h, net_w / new_w)
+        scale = min(net_h / img_h, net_w / img_w)
+        new_h, new_w = int(img_h * scale), int(img_w * scale)
+        offset = ((net_h - new_h) / 2. / net_h, (net_w - new_w) / 2. / net_w)
+        scale = (net_h / new_h, net_w / new_w)
 
-    img_sized = cv2.resize(img, (new_w, new_h))  # whc
-    img_sized = np.pad(img_sized,
-                       (
-                           (int((416 - new_h) / 2), 416 - new_h - int((416 - new_h) / 2)),
-                           (int((416 - new_w) / 2), 416 - new_w - int((416 - new_w) / 2)),
-                           (0, 0)
-                       ), mode='constant')
-    image_data = np.array(img_sized, dtype='float32')
-    return image_data, offset, scale, img_h, img_w
+        img_sized = cv2.resize(img, (new_w, new_h))  # whc
+        img_sized = np.pad(img_sized,
+                           (
+                               (int((416 - new_h) / 2), 416 - new_h - int((416 - new_h) / 2)),
+                               (int((416 - new_w) / 2), 416 - new_w - int((416 - new_w) / 2)),
+                               (0, 0)
+                           ), mode='constant')
+        img_h_list.append(img_h)
+        img_w_list.append(img_w)
+        img_original_list.append(img)
+        img_data_list.append(np.array(img_sized, dtype='float32') / 255.)
+        offset_list.append(offset)
+        scale_list.append(scale)
+
+    # image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+    return img_original_list, img_data_list, offset_list, scale_list, img_h_list, img_w_list
 
 
 def decode_out(net_out, anchors, offset, scale, img_h, img_w):
@@ -71,14 +85,14 @@ def decode_out(net_out, anchors, offset, scale, img_h, img_w):
         ], axis=-1)
         # Scale boxes back to original image shape.
         _boxes *= tf.cast((img_h, img_w, img_h, img_w), 'float32')
-        boxes = tf.reshape(_boxes, [-1, 4])
+        _boxes = tf.reshape(_boxes, [-1, 4])
         _boxes_scores = box_confidence * box_class_probs
         _boxes_scores = tf.reshape(_boxes_scores, [-1, n_class])
 
         boxes.append(_boxes)
         boxes_scores.append(_boxes_scores)
-        boxes = tf.concat(boxes, axis=0)
-        boxes_scores = tf.concat(boxes_scores, axis=0)
+    boxes = tf.concat(boxes, axis=0)
+    boxes_scores = tf.concat(boxes_scores, axis=0)
 
     return boxes, boxes_scores
 
@@ -106,9 +120,42 @@ def nms(boxes, boxes_scores):
     return boxes_op, scores_op, classes_op
 
 
+def show_result(b, s, c, file_path, out_mode=0):
+    if out_mode == 0:
+        plt.cla()
+        plt.imshow(img)
+        for i, obj in enumerate(b):
+            x1 = obj[1]
+            x2 = obj[3]
+            y1 = obj[0]
+            y2 = obj[2]
+            # TODO: change the color of text
+            # plt.text(x1, y1 - 10, round(s[i], 2))
+            plt.text(x2 - 30, y1 - 10, label[c[i]])
+            plt.hlines(y1, x1, x2, colors='red')
+            plt.hlines(y2, x1, x2, colors='red')
+            plt.vlines(x1, y1, y2, colors='red')
+            plt.vlines(x2, y1, y2, colors='red')
+        plt.show()
+    elif out_mode == 1:
+        file = open(out_dir + file_path.split('/')[-1][0:-4] + '.txt', 'w')
+        for i, obj in enumerate(b):
+            cv2.rectangle(img, (obj[1], obj[0]), (obj[3], obj[2]), (0, 0, 255), 3)
+            cv2.putText(img, str(round(s[i], 2)), (int(obj[1]), int(obj[0]) - 10), cv2.FONT_HERSHEY_COMPLEX, 2,
+                        (0, 0, 255), 3)
+            cv2.putText(img, str(label[c[i]]), (int(obj[3]) - 100, int(obj[0]) - 10), cv2.FONT_HERSHEY_COMPLEX,
+                        2, (0, 0, 255), 3)
+
+            file.write('{0} {1} '.format(label[c[i]], s[i]))
+            file.write('{0} {1} {2} {3}'.format(obj[1], obj[0], obj[3], obj[2]))
+            file.write('\n')
+        file.close()
+        cv2.imwrite(out_dir + file_path.split('/')[-1], img)
+
+
 if __name__ == '__main__':
     checkpoint_dir = './ckpt/'
-    ckpt_name = 'ep000-step46000-loss2.157-46000'
+    ckpt_name = 'ep7499-step7500-loss32.775-7500'
     label = Gb_label
     anchors = tf.constant(Gb_anchors, dtype='float', shape=[1, 1, 1, 9, 2])
     n_class = len(label)
@@ -126,27 +173,29 @@ if __name__ == '__main__':
     else:
         print("ckpt文件不存在")
 
-    image_data, offset, scale, img_h, img_w = resize_img(img_path='4.jpg')
-    boxes, boxes_scores = decode_out(net_out, anchors, offset, scale, img_h, img_w)
-    boxes_op, scores_op, classes_op = nms(boxes, boxes_scores)
-    b, s, c = sess.run([boxes_op, scores_op, classes_op], feed_dict={input_pb: image_data})
+    detection_mode = 1
+    out_mode = 0
+    out_dir = './out/'
+    # detect img one by one
+    if detection_mode == 0:
+        while True:
+            file_path = input('Input file_path:')
+            img, image_data, offset, scale, img_h, img_w = resize_img(file_path)
+            boxes, boxes_scores = decode_out(net_out, anchors, offset, scale, img_h, img_w)
+            boxes_op, scores_op, classes_op = nms(boxes, boxes_scores)
+            b, s, c = sess.run([boxes_op, scores_op, classes_op], feed_dict={input_pb: image_data})
+            show_result(b, s, c, file_path, out_mode)
+    # detect all files
+    elif detection_mode == 1:
+        # file_dir = input('Input file_dir:')
+        file_dir = 'C:/Users/john/Desktop/1/image/'
+        imgs_paths = os.listdir(file_dir)
+        cur_dir = os.getcwd()
+        os.chdir(file_dir)
+        # if len(imgs_paths) < Gb_batch_size:
+        img, image_data, offset, scale, img_h, img_w = resize_img(imgs_paths[0:16])
+        boxes, boxes_scores = decode_out(net_out, anchors, offset, scale, img_h, img_w)
 
-    plt.cla()
-    plt.imshow(img)
-    for i, obj in enumerate(b):
-        x1 = obj[1]
-        x2 = obj[3]
-        y1 = obj[0]
-        y2 = obj[2]
-
-        # TODO: change the color of text
-        plt.text(x1, y1 - 10, round(s[i], 2))
-        plt.text(x2 - 30, y1 - 10, label[c[i]])
-        plt.hlines(y1, x1, x2, colors='red')
-        plt.hlines(y2, x1, x2, colors='red')
-        plt.vlines(x1, y1, y2, colors='red')
-        plt.vlines(x2, y1, y2, colors='red')
-    plt.show()
     exit()
 #
 # if not os.path.exists('out'):
