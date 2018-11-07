@@ -1,12 +1,12 @@
 import numpy as np
-from data import pascal_voc_clean_xml
-
+from data import read_xml
+from varible import Gb_label,Gb_labels_dir
 
 class YOLO_Kmeans:
 
-    def __init__(self, cluster_number, ann_dir, pick):
+    def __init__(self, cluster_number, label_dir, pick):
         self.cluster_number = cluster_number
-        self.ann_dir = ann_dir
+        self.label_dir = label_dir
         self.pick = pick
 
     def iou(self, boxes, clusters):  # 1 box -> k clusters
@@ -86,9 +86,8 @@ class YOLO_Kmeans:
     #     f.close()
     #     return result
 
-    # ['2007_000027.jpg',[486, 500, [{'ymin': 101, 'xmax': 349, 'ymax': 351, 'xmin': 174, 'name': 'person'}]]]
     def txt2clusters(self):
-        chunks = pascal_voc_clean_xml(self.ann_dir, self.pick)
+        chunks = read_xml(self.label_dir, self.pick)
         all_boxes = list()
         for chunk in chunks:
             box = list()
@@ -107,7 +106,7 @@ class YOLO_Kmeans:
 
 if __name__ == "__main__":
     cluster_number = 9
-    ann_dir = "/home/hsq/DeepLearning/data/LongWoodCutPickJpg/label"
-    pick = ['knot']
-    kmeans = YOLO_Kmeans(cluster_number, ann_dir, pick)
+    labels_dir = Gb_labels_dir
+    pick = Gb_label
+    kmeans = YOLO_Kmeans(cluster_number, labels_dir, pick)
     kmeans.txt2clusters()
