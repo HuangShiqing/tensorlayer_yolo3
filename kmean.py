@@ -1,12 +1,12 @@
 import numpy as np
 from data import read_xml
-from varible import Gb_label,Gb_labels_dir
+from varible import Gb_label#,Gb_labels_dir
 
 class YOLO_Kmeans:
 
-    def __init__(self, cluster_number, label_dir, pick):
+    def __init__(self, cluster_number, txt_name, pick):
         self.cluster_number = cluster_number
-        self.label_dir = label_dir
+        self.txt_name = txt_name
         self.pick = pick
 
     def iou(self, boxes, clusters):  # 1 box -> k clusters
@@ -87,7 +87,7 @@ class YOLO_Kmeans:
     #     return result
 
     def txt2clusters(self):
-        chunks = read_xml(self.label_dir, self.pick)
+        chunks = read_xml(self.txt_name, self.pick)
         all_boxes = list()
         for chunk in chunks:
             box = list()
@@ -106,7 +106,7 @@ class YOLO_Kmeans:
 
 if __name__ == "__main__":
     cluster_number = 9
-    labels_dir = Gb_labels_dir
+    txt_name = 'train.txt'
     pick = Gb_label
-    kmeans = YOLO_Kmeans(cluster_number, labels_dir, pick)
+    kmeans = YOLO_Kmeans(cluster_number, txt_name, pick)
     kmeans.txt2clusters()

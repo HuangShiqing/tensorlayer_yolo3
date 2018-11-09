@@ -143,11 +143,10 @@ def main():
     log_dir = Gb_ckpt_dir
     final_dir = Gb_ckpt_dir
     save_frequency = Gb_save_frequency
-    labels_path = Gb_labels_dir
     batch_size = Gb_batch_size
     pick = Gb_label
     learning_rate = Gb_learning_rate
-    chunks = read_xml(labels_path, pick)
+    chunks = read_xml('train.txt', pick)
     n_epoch = Gb_epoch
     n_step_epoch = int(len(chunks) / batch_size)
 

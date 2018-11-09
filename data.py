@@ -10,13 +10,13 @@ from tqdm import tqdm
 from varible import *
 
 
-def read_xml(xml_dir, pick):
+def read_xml(txt_name, pick):
     """
         读取目录下所有的xml文件，获得pick标注框的信息
 
         Parameters
         ----------
-        xml_dir : str
+        txt_name : str
         pick : list
 
         Returns
@@ -25,7 +25,7 @@ def read_xml(xml_dir, pick):
 
         Examples
         --------
-        xml_dir = 'D:/DeepLearning/data/WoodBlockNewPick/labels/'
+        txt_name = 'train.txt'
         pick = ['die knot','live knot']
         chunks = [['1065.jpg', [2048, 1536, [{'name': 'die knot', 'ymax': 819, 'xmin': 1026, 'xmax': 1478, 'ymin': 482},
                                             {'name': 'die knot', 'ymax': 714, 'xmin': 796, 'xmax': 986, 'ymin': 387}]]],
@@ -33,31 +33,20 @@ def read_xml(xml_dir, pick):
     """
     print('Parsing for {}'.format(pick))
     chunks = list()
-    cur_dir = os.getcwd()
-    os.chdir(xml_dir)
-    annotations = os.listdir('.')
+    txt_path = Gb_data_dir + txt_name
+    annotations = []
+    with open(txt_path) as fh:
+        for line in fh:
+            annotations.append(Gb_data_dir + 'labels/' + line[:-4] + 'xml')
     not_in_pick = dict()
-    # annotations = glob.glob(str(annotations) + '*.xml')
-    # size = len(annotations)
-
-    # chunks = list()
-    # cur_dir = os.getcwd()
-    # os.chdir(ANN)
-    # path = '/home/hsq/DeepLearning/data/car/bdd100k/daytime.txt'
-    # annotations = []
-    # with open(path) as fh:
-    #     for line in tqdm(fh):
-    #         temp = '/home/hsq/DeepLearning/data/car/bdd100k/labels/100k/train_xml/' + line.strip()[-21:].rstrip(
-    #             '.jpg') + '.xml'
-    #         annotations.append(temp)
-    # size = len(annotations)
 
     for file in tqdm(annotations):
         # actual parsing
         in_file = open(file)
         tree = ET.parse(in_file)
         root = tree.getroot()
-        jpg = str(root.find('filename').text) + '.bmp'
+        jpg = str(root.find('filename').text)
+        jpg = jpg + '.jpg' if 'jpg' not in jpg else ''
         imsize = root.find('size')
         w = int(imsize.find('width').text)
         h = int(imsize.find('height').text)
@@ -109,7 +98,6 @@ def read_xml(xml_dir, pick):
     for j in not_in_pick: print('    {}: {}'.format(j, not_in_pick[j]))
     print('Boxes size: {}'.format(len(chunks)))
 
-    os.chdir(cur_dir)
     return chunks
 
 
@@ -216,7 +204,7 @@ def adjust_wh_ratio(image_h, image_w, net_h, net_w):
     dh = jitter * image_h
 
     new_ar = (image_w + np.random.uniform(-dw, dw)) / (image_h + np.random.uniform(-dh, dh))
-    scale = np.random.uniform(1, 2)
+    scale = np.random.uniform(1, 1.5)
 
     if new_ar < 1:
         new_h = int(scale * net_h)
@@ -390,8 +378,9 @@ def get_data(chunk, images_dir):
     # randomly distort hsv space
     img_adjusted = random_distort_image(img_adjusted)
     # randomly flip
-    flip = np.random.randint(2)
-    img_adjusted = random_flip(img_adjusted, flip)
+    flip = 0
+    # flip = np.random.randint(2)
+    # img_adjusted = random_flip(img_adjusted, flip)
     # correct the size and pos of bounding boxes
     boxes_adjusted = correct_boxes(allobj_, new_w, new_h, net_w, net_h, dx, dy, flip, image_w, image_h)
     # remove the box which out of the 416*416 after augmentation
@@ -547,7 +536,7 @@ def data_generator(chunks, is_show=False):
             x_true =
             y_true =
         """
-    images_path = Gb_images_path
+    images_path = Gb_data_dir + 'images/'
     batch_size = Gb_batch_size
     n = len(chunks)
     i = 0
@@ -589,11 +578,9 @@ def data_generator(chunks, is_show=False):
 
 
 if __name__ == '__main__':
-
-    annotations_path = Gb_ann_path
     pick = Gb_label
-    chunks = read_xml(annotations_path, pick)
-    generator = data_generator(chunks)
+    chunks = read_xml('train.txt', pick)
+    generator = data_generator(chunks, is_show=True)
     for x_true, y_true in generator:
         print('ok')
 
