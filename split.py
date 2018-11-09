@@ -2,20 +2,22 @@ import os
 import numpy
 import random
 import numpy as np
-def create_path(project_dir = './',annotation_dir = project_dir+'label/',img_dir = project_dir+'image/',train_percent=0.8,val_percent = 0.2,test_percent = 0):
+def create_path(project_dir = './',annotation_dir = 'labels/',img_dir = 'images/',train_percent=0.8,val_percent = 0.2,test_percent = 0):
     img_list_anno = []
     img_list_others = []
+    annotation_dir = project_dir + annotation_dir
+    img_dir = project_dir + img_dir
     
     compare_list = {}
     for i in os.listdir('./image/'):
         compare_list[i.split('.')[0]] = i.split('.')[1]
     
     for i in os.listdir(annotation_dir):
-        img_list_anno.append(img_dir+i.split('.')[0]+'.'+compare_list[i.split('.')[0]])
+        img_list_anno.append(i.split('.')[0]+'.'+compare_list[i.split('.')[0]])
 
     for j in os.listdir(img_dir):
         if((img_dir+j) not in img_list_anno):
-            img_list_others.append(img_dir+j)
+            img_list_others.append(j)
     np.random.seed(10101)
     np.random.shuffle(img_list_anno)
     num_val = int(len(img_list_anno)*val_percent)
@@ -38,4 +40,4 @@ def create_path(project_dir = './',annotation_dir = project_dir+'label/',img_dir
                 f.write('%s\n' % item)
 
 if __name__ == "__main__":
-    create_path()
+    create_path('C:/Users/john/Desktop/tag/')
