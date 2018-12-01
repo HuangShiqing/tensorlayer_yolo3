@@ -11,40 +11,27 @@ from model import inference
 from varible import *
 
 
-def resize_img(files_paths):
+def resize_img(img_path):
     net_w, net_h = 416, 416
-    img_h_list = list()
-    img_w_list = list()
-    img_original_list = list()
-    img_data_list = list()
-    offset_list = list()
-    scale_list = list()
-    for i in range(len(files_paths)):
-        img = cv2.imread(files_paths[i])
-        img = img[:, :, ::-1]  # RGB image
-        img_h, img_w = img.shape[0:2]
+    img = cv2.imread(img_path)
+    img = img[:, :, ::-1]  # RGB image
+    img_h, img_w = img.shape[0:2]
 
-        scale = min(net_h / img_h, net_w / img_w)
-        new_h, new_w = int(img_h * scale), int(img_w * scale)
-        offset = ((net_h - new_h) / 2. / net_h, (net_w - new_w) / 2. / net_w)
-        scale = (net_h / new_h, net_w / new_w)
+    scale = min(net_h / img_h, net_w / img_w)
+    new_h, new_w = int(img_h * scale), int(img_w * scale)
+    offset = ((net_h - new_h) / 2. / net_h, (net_w - new_w) / 2. / net_w)
+    scale = (net_h / new_h, net_w / new_w)
 
-        img_sized = cv2.resize(img, (new_w, new_h))  # whc
-        img_sized = np.pad(img_sized,
-                           (
-                               (int((416 - new_h) / 2), 416 - new_h - int((416 - new_h) / 2)),
-                               (int((416 - new_w) / 2), 416 - new_w - int((416 - new_w) / 2)),
-                               (0, 0)
-                           ), mode='constant')
-        img_h_list.append(img_h)
-        img_w_list.append(img_w)
-        img_original_list.append(img)
-        img_data_list.append(np.array(img_sized, dtype='float32') / 255.)
-        offset_list.append(offset)
-        scale_list.append(scale)
-
-    # image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
-    return img_original_list, img_data_list, offset_list, scale_list, img_h_list, img_w_list
+    img_sized = cv2.resize(img, (new_w, new_h))  # whc
+    img_sized = np.pad(img_sized,
+                       (
+                           (int((416 - new_h) / 2), 416 - new_h - int((416 - new_h) / 2)),
+                           (int((416 - new_w) / 2), 416 - new_w - int((416 - new_w) / 2)),
+                           (0, 0)
+                       ), mode='constant')
+    image_data = np.array(img_sized, dtype='float32') / 255.
+    image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
+    return img, image_data, offset, scale, img_h, img_w
 
 
 def decode_out(net_out, anchors, offset, scale, img_h, img_w):
@@ -52,9 +39,6 @@ def decode_out(net_out, anchors, offset, scale, img_h, img_w):
     cellbase_x = tf.to_float(tf.reshape(tf.tile(tf.range(52), [52]), (1, 52, 52, 1, 1)))
     cellbase_y = tf.transpose(cellbase_x, (0, 2, 1, 3, 4))
     cellbase_grid = tf.tile(tf.concat([cellbase_x, cellbase_y], -1), [1, 1, 1, 3, 1])
-
-    offset = tf.tile(tf.reshape(offset, [len(offset), 1, 1, 1, 2]), [1, 52, 52, 3, 1])
-    scale = tf.tile(tf.reshape(scale, [len(scale), 1, 1, 1, 2]), [1, 52, 52, 3, 1])
 
     boxes = list()
     boxes_scores = list()
@@ -76,8 +60,8 @@ def decode_out(net_out, anchors, offset, scale, img_h, img_w):
 
         box_yx = box_xy[..., ::-1]
         box_hw = box_wh[..., ::-1]
-        box_yx = (box_yx - offset[:, :grid_h, :grid_w, :, :]) * scale[:, :grid_h, :grid_w, :, :]
-        box_hw *= scale[:, :grid_h, :grid_w, :, :]
+        box_yx = (box_yx - offset) * scale
+        box_hw *= scale
         box_mins = box_yx - (box_hw / 2.)
         box_maxes = box_yx + (box_hw / 2.)
         _boxes = tf.concat([
@@ -87,17 +71,15 @@ def decode_out(net_out, anchors, offset, scale, img_h, img_w):
             box_maxes[..., 1:2]  # x_max
         ], axis=-1)
         # Scale boxes back to original image shape.
-        _boxes *= tf.cast(tf.tile(tf.reshape(np.array([img_h, img_w, img_h, img_w]).T, [len(img_h), 1, 1, 1, 4]),
-                                  [1, grid_h, grid_w, 3, 1]), 'float32')
-        _boxes = tf.reshape(_boxes, [tf.shape(_boxes)[0], -1, 4])
+        _boxes *= tf.cast((img_h, img_w, img_h, img_w), 'float32')
+        _boxes = tf.reshape(_boxes, [-1, 4])
         _boxes_scores = box_confidence * box_class_probs
-        _boxes_scores = tf.reshape(_boxes_scores, [tf.shape(_boxes_scores)[0], -1, n_class])
+        _boxes_scores = tf.reshape(_boxes_scores, [-1, n_class])
 
         boxes.append(_boxes)
         boxes_scores.append(_boxes_scores)
-
-    boxes = [tf.concat([boxes[0][j], boxes[1][j], boxes[2][j]], axis=0) for j in range(16)]
-    boxes_scores = [tf.concat([boxes_scores[0][j], boxes_scores[1][j], boxes_scores[2][j]], axis=0) for j in range(16)]
+    boxes = tf.concat(boxes, axis=0)
+    boxes_scores = tf.concat(boxes_scores, axis=0)
     return boxes, boxes_scores
 
 
@@ -246,20 +228,20 @@ if __name__ == '__main__':
         print("ckpt文件不存在")
         raise
 
-    detection_mode = 0
+    detection_mode = 0  # 0一张张, 1全部
     out_mode = 0  # 0显示，1存储
     out_dir = './out/'
     # detect img one by one
     if detection_mode == 0:
         while True:
             file_path = input('Input file_path:')
-            img, image_data, offset, scale, img_h, img_w = resize_img([file_path])
+            img, image_data, offset, scale, img_h, img_w = resize_img(file_path)
             boxes, boxes_scores = decode_out(net_out, anchors, offset, scale, img_h, img_w)
-            boxes_op, scores_op, classes_op = nms(boxes[0], boxes_scores[0])
+            boxes_op, scores_op, classes_op = nms(boxes, boxes_scores)
             b, s, c = sess.run([boxes_op, scores_op, classes_op], feed_dict={input_pb: image_data})
-            b, s, c = remove_outbox(b, s, c, img_h[0], img_w[0])
+            b, s, c = remove_outbox(b, s, c, img_h, img_w)
             b, s, c = remove_boxes_among_classes(b, s, c, threshold=0.2)
-            show_result(img[0], b, s, c, out_dir=out_dir, file_path=file_path, out_mode=out_mode)
+            show_result(img, b, s, c, out_dir=out_dir, file_path=file_path, out_mode=out_mode)
     # detect all files
     elif detection_mode == 1:
         imgs_paths = list()
@@ -268,13 +250,13 @@ if __name__ == '__main__':
             for line in fh:
                 imgs_paths.append(Gb_data_dir + 'images/' + line.strip())
 
-        # if len(imgs_paths) < Gb_batch_size:
-        img, image_data, offset, scale, img_h, img_w = resize_img(imgs_paths[0:16])
-        boxes, boxes_scores = decode_out(net_out, anchors, offset, scale, img_h, img_w)
-        for i in range(Gb_batch_size):
-            boxes_op, scores_op, classes_op = nms(boxes[i], boxes_scores[i])
+        for img_path in imgs_paths:
+            img, image_data, offset, scale, img_h, img_w = resize_img(img_path)
+            boxes, boxes_scores = decode_out(net_out, anchors, offset, scale, img_h, img_w)
+            # for i in range(Gb_batch_size):
+            boxes_op, scores_op, classes_op = nms(boxes, boxes_scores)
             b, s, c = sess.run([boxes_op, scores_op, classes_op], feed_dict={input_pb: image_data})
-            b, s, c = remove_outbox(b, s, c, img_h[i], img_w[i])
+            b, s, c = remove_outbox(b, s, c, img_h, img_w)
             b, s, c = remove_boxes_among_classes(b, s, c, threshold=0.2)
-            show_result(img[i], b, s, c, out_dir=out_dir, file_path=imgs_paths[i], out_mode=out_mode)
+            show_result(img, b, s, c, out_dir=out_dir, file_path=img_path, out_mode=out_mode)
     exit()
