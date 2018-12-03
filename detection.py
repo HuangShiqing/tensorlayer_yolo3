@@ -216,7 +216,7 @@ if __name__ == '__main__':
     n_class = len(label)
 
     input_pb = tf.placeholder(tf.float32, [None, 416, 416, 3])
-    net_out = inference(input_pb, n_class)
+    net_out = inference(input_pb, n_class, is_train=False)
 
     # 读取ckpt里保存的参数
     sess = tf.InteractiveSession()
