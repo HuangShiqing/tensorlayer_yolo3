@@ -15,7 +15,7 @@ logger = log.getLogger('tensorlayer')
 logger.setLevel(level=log.ERROR)
 
 
-def conv2d_unit(prev_layer, filters, kernels, act='leaky', strides=1, name='0', bn=True):
+def conv2d_unit(prev_layer, filters, kernels, act='leaky', strides=1, name='0', bn=True, is_train=True):
     input_size = prev_layer.outputs.get_shape().as_list()[1]
     input_ch = prev_layer.outputs.get_shape().as_list()[3]
 
@@ -37,7 +37,7 @@ def conv2d_unit(prev_layer, filters, kernels, act='leaky', strides=1, name='0', 
         name='layer_' + name + '_conv',
         W_init_args={'regularizer': layers.l2_regularizer(5e-4)})
     if bn is True:
-        network = BatchNormLayer(network, epsilon=1e-3, act=lambda x: tl.act.lrelu(x, 0.1), is_train=False,
+        network = BatchNormLayer(network, epsilon=1e-3, act=lambda x: tl.act.lrelu(x, 0.1), is_train=is_train,
                                  name='layer_' + name + '_bn')
 
     out_size = network.outputs.get_shape().as_list()[1]
