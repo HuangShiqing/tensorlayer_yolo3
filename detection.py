@@ -34,7 +34,7 @@ def resize_img(img_path):
     return img, image_data, offset, scale, img_h, img_w
 
 
-def decode_out(net_out, anchors, offset, scale, img_h, img_w):
+def decode_out(net_out, anchors, offset, scale, img_hw):
     net_w, net_h = 416, 416
     cellbase_x = tf.to_float(tf.reshape(tf.tile(tf.range(52), [52]), (1, 52, 52, 1, 1)))
     cellbase_y = tf.transpose(cellbase_x, (0, 2, 1, 3, 4))
@@ -106,6 +106,52 @@ def nms(boxes, boxes_scores):
     return boxes_op, scores_op, classes_op
 
 
+def HSQ_nms(boxes, boxes_scores, score_threshold=0.7, iou_threshold=0.5):
+    classes_index = np.argmax(boxes_scores, axis=-1)
+    scores = np.array([boxes_scores[i, classes_index[i]]
+                       for i in range(len(classes_index))])
+    mask = scores > score_threshold
+
+    boxes = boxes[mask]
+    classes_index = classes_index[mask]
+    scores = scores[mask]
+
+    unique_classes_index = list(np.unique(classes_index))
+    map = [list() for i in range(len(unique_classes_index))]
+    new_map = copy.deepcopy(map)
+    for i in range(len(classes_index)):
+        map[unique_classes_index.index(classes_index[i])].append(i)
+
+    for i in range(len(map)):
+        if len(map[i]) == 1:
+            new_map[i].append(map[i][0])
+        else:
+            score_one_class = scores[map[i]]
+            score_one_class_sorted = np.argsort(score_one_class)
+            new_map[i].append(map[i][score_one_class_sorted[-1]])
+            for j in range(len(score_one_class_sorted) - 2, -1, -1):
+                # iou
+                add_flag = True
+                a = boxes[map[i][score_one_class_sorted[j]]]
+                for k in range(len(new_map[i])):
+                    b = boxes[new_map[i][k]]
+                    if iou(a, b) > iou_threshold:
+                        add_flag = False
+                        break
+                if add_flag == True:
+                    new_map[i].append(map[i][score_one_class_sorted[j]])
+    new_boxes = list()
+    new_scores = list()
+    new_classes = list()
+    for i in range(len(unique_classes_index)):
+
+        for j in range(len(new_map[i])):
+            new_classes.append(unique_classes_index[i])
+            new_boxes.append(boxes[new_map[i][j]])
+            new_scores.append(scores[new_map[i][j]])
+    return np.array(new_boxes), np.array(new_scores), np.array(new_classes)
+
+
 def show_result(img_original, b, s, c, out_dir, file_path, out_mode=0):
     if out_mode == 0:
         plt.cla()
@@ -155,21 +201,30 @@ def remove_outbox(b, s, c, img_h, img_w):
     return b, s, c
 
 
+def limit_outbox(b, s, c, img_h, img_w):
+    b = list(b)
+    s = list(s)
+    c = list(c)
+    for k in range(len(b)):
+        if b[k][0] < 0:
+            b[k][0] = 0
+        if b[k][1] < 0:
+            b[k][1] = 0
+        if b[k][2] > img_h:
+            b[k][2] = img_h
+        if b[k][3] > img_w:
+            b[k][3] = img_w
+    return b, s, c
+
+
 def iou(pre_boxes, true_boxes):
     pred_mins = pre_boxes[..., :2]
     pred_maxes = pre_boxes[..., 2:4]
     true_mins = true_boxes[..., :2]
     true_maxes = true_boxes[..., 2:4]
 
-    #     intersect_mins = tf.maximum(pred_mins, true_mins)
-    #     intersect_maxes = tf.minimum(pred_maxes, true_maxes)
     intersect_mins = np.maximum(pred_mins, true_mins)
     intersect_maxes = np.minimum(pred_maxes, true_maxes)
-    #     print(intersect_mins.shape)
-    #     print(intersect_maxes.shape)
-
-    #     intersect_wh = tf.maximum(intersect_maxes - intersect_mins, 0.)
-
     intersect_wh = np.maximum(intersect_maxes - intersect_mins, 0.)
     intersect_areas = intersect_wh[..., 0] * intersect_wh[..., 1]
 
@@ -211,13 +266,19 @@ def remove_boxes_among_classes(boxes, score, box_class, threshold=0.5):
 if __name__ == '__main__':
     checkpoint_dir = './ckpt/'
     ckpt_name = 'ep3138-step56500-loss22.640'
+    detection_mode = 0  # 0一张张, 1全部
+    out_mode = 0  # 0显示，1存储
+    out_dir = './out/'
+
     label = Gb_label
     anchors = tf.constant(Gb_anchors, dtype='float', shape=[1, 1, 1, 9, 2])
     n_class = len(label)
 
     input_pb = tf.placeholder(tf.float32, [None, 416, 416, 3])
     net_out = inference(input_pb, n_class, is_train=False)
-
+    offset_pb = tf.placeholder(tf.float32, [2])
+    scale_pb = tf.placeholder(tf.float32, [2])
+    img_hw_pb = tf.placeholder(tf.float32, [2])    
     # 读取ckpt里保存的参数
     sess = tf.InteractiveSession()
     saver = tf.train.Saver()
@@ -227,20 +288,22 @@ if __name__ == '__main__':
     except:
         print("ckpt文件不存在")
         raise
+    boxes, boxes_scores = decode_out(net_out, anchors, offset_pb, scale_pb, img_hw_pb)
 
-    detection_mode = 0  # 0一张张, 1全部
-    out_mode = 0  # 0显示，1存储
-    out_dir = './out/'
     # detect img one by one
     if detection_mode == 0:
         while True:
             file_path = input('Input file_path:')
             img, image_data, offset, scale, img_h, img_w = resize_img(file_path)
-            boxes, boxes_scores = decode_out(net_out, anchors, offset, scale, img_h, img_w)
-            boxes_op, scores_op, classes_op = nms(boxes, boxes_scores)
-            b, s, c = sess.run([boxes_op, scores_op, classes_op], feed_dict={input_pb: image_data})
-            b, s, c = remove_outbox(b, s, c, img_h, img_w)
-            b, s, c = remove_boxes_among_classes(b, s, c, threshold=0.2)
+            b, s = sess.run([boxes, boxes_scores], feed_dict={  
+                                                                input_pb: image_data, 
+                                                                offset_pb: offset,
+                                                                scale_pb: scale, 
+                                                                img_hw_pb: [img_h, img_w]})
+            b, s, c = HSQ_nms(b, s)
+            b, s, c = limit_outbox(b, s, c, img_h, img_w)
+            # b, s, c = remove_outbox(b, s, c, img_h, img_w)
+            # b, s, c = remove_boxes_among_classes(b, s, c, threshold=0.2)
             show_result(img, b, s, c, out_dir=out_dir, file_path=file_path, out_mode=out_mode)
     # detect all files
     elif detection_mode == 1:
@@ -252,11 +315,14 @@ if __name__ == '__main__':
 
         for img_path in imgs_paths:
             img, image_data, offset, scale, img_h, img_w = resize_img(img_path)
-            boxes, boxes_scores = decode_out(net_out, anchors, offset, scale, img_h, img_w)
-            # for i in range(Gb_batch_size):
-            boxes_op, scores_op, classes_op = nms(boxes, boxes_scores)
-            b, s, c = sess.run([boxes_op, scores_op, classes_op], feed_dict={input_pb: image_data})
-            b, s, c = remove_outbox(b, s, c, img_h, img_w)
-            b, s, c = remove_boxes_among_classes(b, s, c, threshold=0.2)
+            b, s = sess.run([boxes, boxes_scores], feed_dict={  
+                                                                input_pb: image_data, 
+                                                                offset_pb: offset,
+                                                                scale_pb: scale, 
+                                                                img_hw_pb: [img_h, img_w]})
+            b, s, c = HSQ_nms(b, s)
+            b, s, c = limit_outbox(b, s, c, img_h, img_w)
+            # b, s, c = remove_outbox(b, s, c, img_h, img_w)
+            # b, s, c = remove_boxes_among_classes(b, s, c, threshold=0.2)
             show_result(img, b, s, c, out_dir=out_dir, file_path=img_path, out_mode=out_mode)
     exit()
